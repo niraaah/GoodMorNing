@@ -19,7 +19,8 @@ from pgvector.psycopg import register_vector
 
 ROOT = Path(__file__).resolve().parent.parent
 # Application tables first: the catalog's asset links reference assets.
-SCHEMAS = (Path(__file__).with_name('schema.sql'), Path(__file__).parent / 'goods' / 'catalog.sql')
+SCHEMAS = (Path(__file__).with_name('schema.sql'), Path(__file__).parent / 'goods' / 'catalog.sql',
+           Path(__file__).with_name('diary_schema.sql'))
 READER = 'goodmorning_reader'
 _pool = None
 _lock = threading.Lock()
