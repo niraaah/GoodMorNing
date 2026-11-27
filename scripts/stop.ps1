@@ -1,8 +1,8 @@
-param([switch]$TunnelOnly,[switch]$ServerOnly)
+param([switch]$TunnelOnly,[switch]$ServerOnly,[switch]$SearchOnly)
 $ErrorActionPreference='Stop'
 $projectRoot=Split-Path $PSScriptRoot -Parent
-if($TunnelOnly -and $ServerOnly){throw 'Choose either -TunnelOnly or -ServerOnly.'}
-$names=if($TunnelOnly){@('tunnel')}elseif($ServerOnly){@('server','search')}else{@('tunnel','server','search')}
+if(([int]$TunnelOnly.IsPresent+[int]$ServerOnly.IsPresent+[int]$SearchOnly.IsPresent) -gt 1){throw 'Choose one stop scope.'}
+$names=if($SearchOnly){@('search')}elseif($TunnelOnly){@('tunnel')}elseif($ServerOnly){@('server','search')}else{@('tunnel','server','search')}
 foreach($name in $names){
   $pidPath=Join-Path $projectRoot "logs\$name.pid"
   if(-not(Test-Path -LiteralPath $pidPath)){continue}
@@ -25,4 +25,9 @@ foreach($name in $names){
   for($index=$descendants.Count-1;$index -ge 0;$index--){Stop-Process -Id $descendants[$index] -ErrorAction SilentlyContinue}
   Stop-Process -Id $ownedId -ErrorAction SilentlyContinue
   Write-Output "Stopped $name ($ownedId)"
+}
+
+if(-not $TunnelOnly){
+  & (Join-Path $projectRoot '.venv/Scripts/python.exe') (Join-Path $PSScriptRoot 'search_sandbox.py') stop
+  if($LASTEXITCODE -ne 0){throw 'Isolated search shutdown failed.'}
 }

@@ -23,10 +23,10 @@
 
 ## 굿즈 검색 연결과 현재 제한
 
-사진은 로컬 PC의 `127.0.0.1:8788` 검색 서비스에서 비교합니다. SAM 2와 의존성이 충돌하지 않도록 `.venv-search`를 따로 사용합니다. 현재 PC의 EmbeddingGemma 2는 **CPU/float32**, SAM 2는 기존 **AMD DirectML GPU**로 실행합니다. 사진을 쇼핑몰이나 외부 AI 서비스에 보내지 않으며, 검색어만 판매처에 전송합니다.
+사진은 로컬 PC의 `127.0.0.1:8788` 검색 서비스에서 비교합니다. 검색·크롤러·외부 통신 게이트웨이를 이 PC의 Docker 컨테이너로 분리합니다. `.venv-search`는 최초 모델 다운로드용으로만 남습니다. 현재 PC의 EmbeddingGemma 2는 **CPU/float32**, SAM 2는 기존 **AMD DirectML GPU**로 실행합니다. 사진을 쇼핑몰이나 외부 AI 서비스에 보내지 않으며, 검색어만 판매처에 전송합니다.
 
 ```powershell
-.\scripts\setup-search.ps1  # 별도 Python 환경, Chromium, 고정 모델 준비
+.\scripts\setup-search.ps1  # 고정 모델 준비 및 격리 컨테이너 이미지 빌드
 .\scripts\start.ps1         # GPU API와 검색 서비스를 함께 시작
 ```
 
@@ -36,13 +36,15 @@
 | 쿠팡 | 파트너스 API HMAC 상품 검색 어댑터 구현. **현재 키 미설정으로 실제 API 연결 전**입니다. 쿠팡 웹 차단을 우회하는 크롤러는 실행하지 않습니다. |
 | 포켓몬스토어·대원샵 | 초기 저장소의 선택자·수집 구조를 참고한 **Scrapy + Playwright** 검색. 요청 전 robots.txt 확인, 차단 시 중단, 사이트당 동시 1개·3초 간격. 2026-11-26 robots.txt 접근 허용 확인. 실제 상품 검색·선택자 동작은 기능 테스트하지 않았습니다. |
 
-쿠팡 키는 **`data/search.local.json`**의 `COUPANG_ACCESS_KEY`, `COUPANG_SECRET_KEY`에만 입력합니다. 이 파일은 Git·Pages에서 제외됩니다. 설정은 다음 검색부터 읽으므로 재시작할 필요가 없습니다. 쿠팡만 쓰려면 `official_shops`를 `false`로 설정하세요. 새 키를 넣기 전까지는 화면에 ‘API 연결 대기’를 표시하며 가짜 상품으로 대체하지 않습니다. 쿠팡 API의 현재 권한·응답 호환성은 유효한 키로 별도 확인이 필요합니다.
+쿠팡 키는 **`data/search.local.json`**의 `COUPANG_ACCESS_KEY`, `COUPANG_SECRET_KEY`에만 입력합니다. 이 파일은 Git·Pages에서 제외됩니다. 수정 후 `scripts/start-search.ps1`을 실행하면 필요한 항목만 격리 설정으로 동기화합니다. 이미지·격리 설정이 같으면 재시작하지 않습니다. 쿠팡만 쓰려면 `official_shops`를 `false`로 설정하세요. 새 키를 넣기 전까지는 화면에 ‘API 연결 대기’를 표시하며 가짜 상품으로 대체하지 않습니다. 쿠팡 API의 현재 권한·응답 호환성은 유효한 키로 별도 확인이 필요합니다.
 
 추천이 없을 때 표시하는 안내(3문장):
 
 > 찾는 굿즈가 없다면 아직 검색 목록에 없거나 사진에서 특징이 잘 보이지 않았을 수 있어요. 더 정확하게 찾고 스티커를 만들 수 있도록 밝은 곳에서 굿즈가 화면에 크게 나오게 선명하게 찍어 주세요. 상품명·캐릭터명을 함께 입력하거나 상품 링크를 직접 연결할 수도 있어요.
 
 검색 오류·판매처 차단·미설정 상태는 촬영 안내와 따로 표시합니다. 검색 결과는 사용자별로 저장하고 24시간 뒤 새 검색/서버 시작 시 정리합니다. 검색 사진과 그 임베딩은 검색 중 메모리에서만 사용하며, 확정한 상품 정보는 스티커와 함께 유지합니다. 공개 상품 임베딩은 모델 버전별로 로컬 캐시하고 판매처 검색 결과는 15분간 재사용합니다. 실제 검색·추천 정확도·모바일 선택 흐름은 사용자 확인 대상입니다.
+
+검색 격리는 PostgreSQL 보안 설정 이후 설치합니다. Docker Desktop이 켜져 있어야 하고 기존 모델은 읽기 전용으로 재사용합니다. `scripts/stop.ps1 -SearchOnly`는 GPU API·터널·DB를 유지하고 검색만 종료합니다. 코드 수정 후 `scripts/setup-search.ps1`로 다시 빌드하고 `scripts/start-search.ps1`로 반영합니다. [격리 구조 및 한계](docs/SECURITY.md#검색크롤러-컨테이너-격리-2차)
 
 ## 다이어리와 스티커 기능
 
@@ -152,7 +154,7 @@ GoodMorNing/
 │  ├─ access.py               외부 접속 키·세션 쿠키
 │  ├─ notebook.py             원본 다이어리 페이지·첨부 파일의 소유자별 저장
 │  ├─ goods/                  상품 검색 API·쿠팡 서명·Scrapy/Playwright·EmbeddingGemma 2
-│  ├─ requirements-search.txt  격리된 검색 환경의 직접 의존성
+│  ├─ requirements-search.txt  이전 네이티브 검색 환경의 의존성 기록
 │  ├─ asset_trash.py          이름 확인 삭제·소유자별 휴지통·복구
 │  ├─ reference/diary_bridge.js  원본 편집기 ↔ GPU 에셋·페이지 저장 연결
 │  ├─ reference/diary_motion.js  고정 다이어리의 자이로 반사·수동 대체 모드
@@ -163,13 +165,16 @@ GoodMorNing/
 │  ├─ scene/                  Three.js 입체 다이어리와 로컬 라이브러리
 │  ├─ test_app.py             생성·저장·입력·접근 제어 테스트
 │  └─ requirements-windows-lock.txt
+├─ containers/search/         이미지·Compose·방화벽·게이트웨이·Chromium 보안 프로필
 ├─ scripts/
 │  ├─ setup.ps1               새 PC에서 환경 구성
 │  ├─ setup-postgres.ps1       Docker로 PostgreSQL 17 + pgvector 준비
 │  ├─ migrate_postgres.py      예전 SQLite 데이터를 PostgreSQL로 이행
 │  ├─ setup_models.py         고정 버전 SAM 2 ONNX 모델 다운로드
 │  ├─ setup-search.ps1         검색 환경·모델·Chromium 설치
-│  ├─ start-search.ps1         내부 전용 상품 검색 서버 실행
+│  ├─ start-search.ps1         격리된 상품 검색 서버 시작
+│  ├─ search_sandbox.py        이미지 빌드·설정 동기화·네트워크 연결·시작/종료
+│  ├─ verify_search_sandbox.py  파일·통신·Chromium 격리 검증
 │  ├─ build.ps1               Flutter 웹 빌드
 │  ├─ finalize_web.py         배포별 JS 주소 분리·이전 실행 파일 캐시 방지
 │  ├─ prepare_frontend.py      원본 홈·메뉴·정적 3D 파일 준비
@@ -187,6 +192,7 @@ GoodMorNing/
 │  ├─ postgres.key            유지보수 관리자 비밀번호 (실행 서버에서 사용하지 않음)
 │  ├─ postgres-*.key          API·검색·조회 전용 DB 비밀번호
 │  ├─ search-service.key      내부 검색 서버 전용 인증 키
+│  ├─ search-sandbox/         크롤러 키·최소 검색 설정·실행 지문 (Git 제외)
 │  ├─ backups/                SQLite 이행 전 백업
 │  ├─ assets/<id>/             원본 사진, 스티커, 메타데이터
 │  ├─ notebook-files/         다이어리 첨부 사진·GLB (소유자별 접근)

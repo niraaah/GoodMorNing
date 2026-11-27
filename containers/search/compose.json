@@ -1,0 +1,391 @@
+{
+  "name": "goodmorning-search-sandbox",
+  "services": {
+    "guard-gateway": {
+      "restart": "unless-stopped",
+      "read_only": true,
+      "cap_drop": [
+        "ALL"
+      ],
+      "security_opt": [
+        "no-new-privileges:true"
+      ],
+      "logging": {
+        "driver": "local",
+        "options": {
+          "max-size": "5m",
+          "max-file": "2"
+        }
+      },
+      "build": {
+        "context": "../..",
+        "dockerfile": "containers/search/Dockerfile",
+        "target": "guard"
+      },
+      "image": "goodmorning-network-guard:local",
+      "container_name": "goodmorning-guard-gateway",
+      "cap_add": [
+        "NET_ADMIN",
+        "SETUID",
+        "SETGID",
+        "SETPCAP"
+      ],
+      "environment": {
+        "PROFILE": "gateway"
+      },
+      "networks": {
+        "isolated": {
+          "ipv4_address": "172.30.74.2"
+        },
+        "outbound": {}
+      },
+      "tmpfs": [
+        "/run:rw,noexec,nosuid,size=1m"
+      ],
+      "pids_limit": 32,
+      "mem_limit": "64m",
+      "healthcheck": {
+        "test": [
+          "CMD",
+          "test",
+          "-f",
+          "/run/firewall-ready"
+        ],
+        "interval": "2s",
+        "timeout": "1s",
+        "retries": 20
+      }
+    },
+    "guard-search": {
+      "restart": "unless-stopped",
+      "read_only": true,
+      "cap_drop": [
+        "ALL"
+      ],
+      "security_opt": [
+        "no-new-privileges:true"
+      ],
+      "logging": {
+        "driver": "local",
+        "options": {
+          "max-size": "5m",
+          "max-file": "2"
+        }
+      },
+      "build": {
+        "context": "../..",
+        "dockerfile": "containers/search/Dockerfile",
+        "target": "guard"
+      },
+      "image": "goodmorning-network-guard:local",
+      "container_name": "goodmorning-guard-search",
+      "cap_add": [
+        "NET_ADMIN",
+        "SETUID",
+        "SETGID",
+        "SETPCAP"
+      ],
+      "environment": {
+        "PROFILE": "search"
+      },
+      "networks": {
+        "isolated": {
+          "ipv4_address": "172.30.74.3"
+        },
+        "ingress": {}
+      },
+      "tmpfs": [
+        "/run:rw,noexec,nosuid,size=1m"
+      ],
+      "pids_limit": 32,
+      "mem_limit": "64m",
+      "healthcheck": {
+        "test": [
+          "CMD",
+          "test",
+          "-f",
+          "/run/firewall-ready"
+        ],
+        "interval": "2s",
+        "timeout": "1s",
+        "retries": 20
+      },
+      "ports": [
+        "127.0.0.1:8788:8788"
+      ]
+    },
+    "guard-crawler": {
+      "restart": "unless-stopped",
+      "read_only": true,
+      "cap_drop": [
+        "ALL"
+      ],
+      "security_opt": [
+        "no-new-privileges:true"
+      ],
+      "logging": {
+        "driver": "local",
+        "options": {
+          "max-size": "5m",
+          "max-file": "2"
+        }
+      },
+      "build": {
+        "context": "../..",
+        "dockerfile": "containers/search/Dockerfile",
+        "target": "guard"
+      },
+      "image": "goodmorning-network-guard:local",
+      "container_name": "goodmorning-guard-crawler",
+      "cap_add": [
+        "NET_ADMIN",
+        "SETUID",
+        "SETGID",
+        "SETPCAP"
+      ],
+      "environment": {
+        "PROFILE": "crawler"
+      },
+      "networks": {
+        "isolated": {
+          "ipv4_address": "172.30.74.4"
+        }
+      },
+      "tmpfs": [
+        "/run:rw,noexec,nosuid,size=1m"
+      ],
+      "pids_limit": 32,
+      "mem_limit": "64m",
+      "healthcheck": {
+        "test": [
+          "CMD",
+          "test",
+          "-f",
+          "/run/firewall-ready"
+        ],
+        "interval": "2s",
+        "timeout": "1s",
+        "retries": 20
+      }
+    },
+    "gateway": {
+      "restart": "unless-stopped",
+      "read_only": true,
+      "cap_drop": [
+        "ALL"
+      ],
+      "security_opt": [
+        "no-new-privileges:true"
+      ],
+      "logging": {
+        "driver": "local",
+        "options": {
+          "max-size": "5m",
+          "max-file": "2"
+        }
+      },
+      "build": {
+        "context": "../..",
+        "dockerfile": "containers/search/Dockerfile",
+        "target": "gateway"
+      },
+      "image": "goodmorning-gateway:local",
+      "container_name": "goodmorning-gateway",
+      "user": "10003:10003",
+      "init": true,
+      "network_mode": "service:guard-gateway",
+      "depends_on": {
+        "guard-gateway": {
+          "condition": "service_healthy"
+        }
+      },
+      "tmpfs": [
+        "/tmp:rw,noexec,nosuid,size=1g,uid=10003,gid=10003,mode=1777"
+      ],
+      "pids_limit": 256,
+      "mem_limit": "128m",
+      "cpus": 1
+    },
+    "search": {
+      "restart": "unless-stopped",
+      "read_only": true,
+      "cap_drop": [
+        "ALL"
+      ],
+      "security_opt": [
+        "no-new-privileges:true"
+      ],
+      "logging": {
+        "driver": "local",
+        "options": {
+          "max-size": "5m",
+          "max-file": "2"
+        }
+      },
+      "build": {
+        "context": "../..",
+        "dockerfile": "containers/search/Dockerfile",
+        "target": "search"
+      },
+      "image": "goodmorning-search:local",
+      "container_name": "goodmorning-search",
+      "user": "10001:10001",
+      "init": true,
+      "network_mode": "service:guard-search",
+      "depends_on": {
+        "guard-search": {
+          "condition": "service_healthy"
+        },
+        "gateway": {
+          "condition": "service_started"
+        },
+        "crawler": {
+          "condition": "service_started"
+        }
+      },
+      "tmpfs": [
+        "/tmp:rw,noexec,nosuid,size=1g,uid=10001,gid=10001,mode=1777",
+        "/data/goods-cache:rw,noexec,nosuid,size=64m,uid=10001,gid=10001,mode=700"
+      ],
+      "pids_limit": 256,
+      "mem_limit": "8g",
+      "cpus": 4,
+      "environment": {
+        "GOODMORNING_DATA": "/data",
+        "GOODMORNING_DATABASE_HOST": "172.30.74.10",
+        "GOODMORNING_DATABASE_PORT": "5432",
+        "GOODMORNING_EGRESS_PROXY": "http://172.30.74.2:8080",
+        "GOODMORNING_CRAWLER_URL": "http://172.30.74.4:8790",
+        "GOODMORNING_CRAWLER_KEY_FILE": "/run/secrets/crawler-service.key",
+        "OMP_NUM_THREADS": "4"
+      },
+      "volumes": [
+        {
+          "type": "bind",
+          "source": "${GOODMORNING_ROOT}/data/models/embeddinggemma-2",
+          "target": "/data/models/embeddinggemma-2",
+          "read_only": true,
+          "bind": {
+            "create_host_path": false
+          }
+        },
+        {
+          "type": "bind",
+          "source": "${GOODMORNING_ROOT}/data/postgres-search.key",
+          "target": "/data/postgres-search.key",
+          "read_only": true,
+          "bind": {
+            "create_host_path": false
+          }
+        },
+        {
+          "type": "bind",
+          "source": "${GOODMORNING_ROOT}/data/search-service.key",
+          "target": "/data/search-service.key",
+          "read_only": true,
+          "bind": {
+            "create_host_path": false
+          }
+        },
+        {
+          "type": "bind",
+          "source": "${GOODMORNING_ROOT}/data/search-sandbox/search.local.json",
+          "target": "/data/search.local.json",
+          "read_only": true,
+          "bind": {
+            "create_host_path": false
+          }
+        },
+        {
+          "type": "bind",
+          "source": "${GOODMORNING_ROOT}/data/search-sandbox/crawler-service.key",
+          "target": "/run/secrets/crawler-service.key",
+          "read_only": true,
+          "bind": {
+            "create_host_path": false
+          }
+        },
+        {
+          "type": "bind",
+          "source": "${GOODMORNING_ROOT}/data/catalog-images",
+          "target": "/data/catalog-images",
+          "read_only": false,
+          "bind": {
+            "create_host_path": false
+          }
+        }
+      ]
+    },
+    "crawler": {
+      "restart": "unless-stopped",
+      "read_only": true,
+      "cap_drop": [
+        "ALL"
+      ],
+      "security_opt": [
+        "no-new-privileges:true",
+        "seccomp=./chromium-seccomp.json"
+      ],
+      "logging": {
+        "driver": "local",
+        "options": {
+          "max-size": "5m",
+          "max-file": "2"
+        }
+      },
+      "build": {
+        "context": "../..",
+        "dockerfile": "containers/search/Dockerfile",
+        "target": "crawler"
+      },
+      "image": "goodmorning-crawler:local",
+      "container_name": "goodmorning-crawler",
+      "user": "10002:10002",
+      "init": true,
+      "network_mode": "service:guard-crawler",
+      "depends_on": {
+        "guard-crawler": {
+          "condition": "service_healthy"
+        },
+        "gateway": {
+          "condition": "service_started"
+        }
+      },
+      "tmpfs": [
+        "/tmp:rw,noexec,nosuid,size=1g,uid=10002,gid=10002,mode=1777"
+      ],
+      "pids_limit": 256,
+      "mem_limit": "1536m",
+      "cpus": 2,
+      "environment": {
+        "GOODMORNING_EGRESS_PROXY": "http://172.30.74.2:8080",
+        "GOODMORNING_CRAWLER_KEY_FILE": "/run/secrets/crawler-service.key",
+        "GOODMORNING_DATA": "/tmp/goodmorning"
+      },
+      "volumes": [
+        {
+          "type": "bind",
+          "source": "${GOODMORNING_ROOT}/data/search-sandbox/crawler-service.key",
+          "target": "/run/secrets/crawler-service.key",
+          "read_only": true,
+          "bind": {
+            "create_host_path": false
+          }
+        }
+      ],
+      "shm_size": "256m"
+    }
+  },
+  "networks": {
+    "isolated": {
+      "external": true,
+      "name": "goodmorning-sandbox"
+    },
+    "outbound": {
+      "driver": "bridge"
+    },
+    "ingress": {
+      "driver": "bridge"
+    }
+  }
+}

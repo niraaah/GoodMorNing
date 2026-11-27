@@ -1,4 +1,4 @@
-"""Loopback-only retrieval service in .venv-search, isolated from SAM 2."""
+"""Containerized retrieval service; crawler and outbound network are separate boundaries."""
 import base64
 import hashlib
 import hmac
@@ -6,9 +6,6 @@ import io
 import json
 import logging
 import os
-import subprocess
-import sys
-import tempfile
 import threading
 import time
 from pathlib import Path
@@ -20,7 +17,7 @@ import numpy as np
 from PIL import Image
 from fastapi import FastAPI, Request, HTTPException
 from pydantic import BaseModel, Field
-from .config import ROOT, DATA, MODEL_REVISION, settings
+from .config import ROOT, DATA, MODEL_REVISION, settings, egress_proxy
 from .coupang import search as coupang_search
 from . import catalog
 from .. import db
@@ -57,6 +54,7 @@ def warmup():
 
 @asynccontextmanager
 async def lifespan(app):
+    egress_proxy()
     catalog.initialize()
     threading.Thread(target=warmup,daemon=True).start()
     yield
@@ -67,7 +65,7 @@ app=FastAPI(lifespan=lifespan,docs_url=None,redoc_url=None,openapi_url=None)
 async def authorize(request:Request,call_next):
     expected=(DATA/'search-service.key').read_text(encoding='utf-8').strip()
     token=request.headers.get('authorization','').removeprefix('Bearer ')
-    if not hmac.compare_digest(token,expected):
+    if not expected or not hmac.compare_digest(token.encode(),expected.encode()):
         from fastapi.responses import JSONResponse
         return JSONResponse({'detail':'Unauthorized'},status_code=401)
     return await call_next(request)
@@ -75,7 +73,7 @@ async def authorize(request:Request,call_next):
 @app.get('/health')
 def health():
     config=settings()
-    return {'status':'ok','model':'google/embeddinggemma-2','revision':MODEL_REVISION,
+    return {'status':'ok','isolated':True,'model':'google/embeddinggemma-2','revision':MODEL_REVISION,
         'model_loaded':model is not None,'model_error':model_error,'device':config.get('EMBEDDING_DEVICE','cpu'),
         'coupang_configured':bool(config.get('COUPANG_ACCESS_KEY') and config.get('COUPANG_SECRET_KEY')),
         'naver':'api_retired_manual_links_only','official_shops':config.get('official_shops',True)}
@@ -94,19 +92,22 @@ def collect(query):
     products, state=coupang_search(query)
     states=[state,{'source':'네이버','state':'manual','message':'네이버 상품은 링크를 직접 입력해 연결할 수 있어요.'}]
     if config.get('official_shops',True):
-        with tempfile.TemporaryDirectory(prefix='goods-',dir=cache) as folder:
-            output=str(Path(folder)/'catalog.json')
-            try:
-                subprocess.run([sys.executable,'-m','server.goods.crawl',query,output],cwd=ROOT,
-                    timeout=100,check=True,stdout=subprocess.DEVNULL,stderr=subprocess.PIPE,
-                    env={k:v for k,v in os.environ.items() if k.upper() in (
-                        'SYSTEMROOT','WINDIR','PATH','TEMP','TMP','USERPROFILE','LOCALAPPDATA',
-                        'APPDATA','PROGRAMFILES','PROGRAMFILES(X86)','COMSPEC','HOME','LANG','PYTHONIOENCODING')},
-                    creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
-                data=json.loads(Path(output).read_text(encoding='utf-8'))
-                products.extend(data['products']);states.extend(data['sources'])
-            except (subprocess.SubprocessError,OSError,ValueError,KeyError):
-                states.append({'source':'공식 굿즈몰','state':'unavailable','message':'공식몰에 연결하지 못했어요. 잠시 후 다시 검색해 주세요.'})
+        try:
+            address=os.environ['GOODMORNING_CRAWLER_URL']
+            if address!='http://172.30.74.4:8790':raise ValueError()
+            key=Path(os.environ['GOODMORNING_CRAWLER_KEY_FILE']).read_text(encoding='utf-8').strip()
+            with httpx.stream('POST',address+'/collect',json={'query':query},
+                headers={'Authorization':'Bearer '+key},timeout=110,trust_env=False) as response:
+                response.raise_for_status()
+                content=bytearray()
+                for chunk in response.iter_bytes():
+                    content.extend(chunk)
+                    if len(content)>256*1024:raise ValueError()
+            data=json.loads(content)
+            if not isinstance(data['products'],list) or not isinstance(data['sources'],list):raise ValueError()
+            products.extend(data['products'][:24]);states.extend(data['sources'][:4])
+        except (httpx.HTTPError,OSError,ValueError,KeyError,TypeError):
+            states.append({'source':'공식 굿즈몰','state':'unavailable','message':'공식몰에 연결하지 못했어요. 잠시 후 다시 검색해 주세요.'})
     unique=list({p['id']:p for p in products}.values())[:32]
     catalog.record_collection(query,fingerprint,unique,states,started)
     saved=catalog.candidates(query)
@@ -123,7 +124,7 @@ def remote_image(url):
             parsed=urlsplit(url);host=(parsed.hostname or '').lower()
             if parsed.scheme!='https' or parsed.username or parsed.password or parsed.port not in (None,443): return None
             if not any(host==d or host.endswith('.'+d) for d in domains): return None
-            with httpx.stream('GET',url,timeout=8,follow_redirects=False,trust_env=False) as response:
+            with httpx.stream('GET',url,timeout=8,follow_redirects=False,trust_env=False,proxy=egress_proxy()) as response:
                 if response.status_code in (301,302,303,307,308):
                     url=urljoin(url,response.headers.get('location',''));continue
                 if response.status_code!=200 or not response.headers.get('content-type','').startswith('image/'): return None

@@ -32,7 +32,7 @@ def _local_url(role, keyfile):
     key = data_dir()/keyfile
     if not key.is_file():
         raise RuntimeError('DB 보안 설정이 필요합니다. scripts/setup-postgres.ps1을 실행해 주세요.')
-    return make_conninfo(host='127.0.0.1', port=os.getenv('GOODMORNING_DATABASE_PORT', '55432'),
+    return make_conninfo(host=os.getenv('GOODMORNING_DATABASE_HOST','127.0.0.1'), port=os.getenv('GOODMORNING_DATABASE_PORT', '55432'),
                          dbname='goodmorning', user=role, password=key.read_text(encoding='utf-8').strip())
 
 
