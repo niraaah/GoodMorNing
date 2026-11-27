@@ -213,23 +213,6 @@ class _StudioState extends State<Studio> {
         );
         account = await Api.get('/auth/me');
       }
-      final withdrawalAt = int.tryParse(
-        web.window.sessionStorage.getItem('goodmorning-withdraw-after-login') ??
-            '',
-      );
-      web.window.sessionStorage.removeItem('goodmorning-withdraw-after-login');
-      if (withdrawalAt != null &&
-          DateTime.now().millisecondsSinceEpoch - withdrawalAt < 600000 &&
-          account['kind'] == 'member' &&
-          account['profile_ready'] == true &&
-          mounted) {
-        await Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => const AccountPage(resumeWithdrawal: true),
-          ),
-        );
-      }
       final result = await Future.wait([
         Api.get('/api/assets'),
         Api.get('/api/diaries'),

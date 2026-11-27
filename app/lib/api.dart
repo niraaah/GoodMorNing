@@ -23,6 +23,8 @@ class Api {
   }
 
   static Future<void> initialize() async {
+    // Discard the obsolete withdrawal-resume flag without resuming any action.
+    web.window.sessionStorage.removeItem('goodmorning-withdraw-after-login');
     if (web.window.localStorage.getItem('goodmorning-clear-browser') == '1') {
       for (final storage in [
         web.window.localStorage,
@@ -229,7 +231,6 @@ class Api {
 
   static Future<void> logout() async {
     web.window.sessionStorage.removeItem('goodmorning-signup');
-    web.window.sessionStorage.removeItem('goodmorning-withdraw-after-login');
     await post('/auth/logout');
     web.window.sessionStorage.removeItem('goodmorning-token');
     web.window.sessionStorage.removeItem('goodmorning-oauth');

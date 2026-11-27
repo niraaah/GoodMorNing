@@ -26,7 +26,6 @@
     if(result.signup_token) {
       if(!/^[A-Za-z0-9_-]{43}$/.test(result.signup_token) || result.expires_in!==600) throw Error('가입 응답을 확인하지 못했어요.');
       sessionStorage.setItem('goodmorning-signup', JSON.stringify({token:result.signup_token, server:server.origin, expires:Date.now()+600000}));
-      sessionStorage.removeItem('goodmorning-withdraw-after-login');
       sessionStorage.removeItem('goodmorning-oauth');
       location.replace(home.href);
       return;
@@ -39,7 +38,6 @@
     sessionStorage.removeItem('goodmorning-oauth');
     location.replace(home.href);
   } catch(error) {
-    sessionStorage.removeItem('goodmorning-withdraw-after-login');
     sessionStorage.removeItem('goodmorning-oauth');
     status.textContent=error.name==='TimeoutError'?'연결 시간이 길어지고 있어요. 앱에서 다시 로그인해 주세요.':error.message;
   }
