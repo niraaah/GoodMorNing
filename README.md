@@ -4,6 +4,8 @@
 
 프론트는 **[GitHub Pages](https://niraaah.github.io/GoodMorNing/)**, GPU API와 데이터 저장소는 **사용자 Windows PC**에서 실행합니다. GitHub Actions는 main에 push할 때 Flutter 웹을 빌드해서 Pages에 배포하며, GPU 작업을 실행하는 서버는 아닙니다.
 
+개발 변경은 `feature/*`, `fix/*`, `chore/*` 작업 브랜치에서 PR로 올립니다. 빌드·보안 검사를 거쳐 `main`에 병합하며, PR에서는 배포하지 않습니다. [브랜치 운영 방법](CONTRIBUTING.md)을 참고하세요.
+
 원본 [프로토타입](https://github.com/mokma18/goodmorning-prototype-demo)의 홈·다이어리·훔쳐보기 소스를 재사용합니다. **Flutter 앱의 HtmlElementView 안에 원본 HTML/CSS/JS 화면을 넣은 혼합 구조**이며, 모든 UI를 네이티브 Flutter 위젯으로 다시 그린 구현은 아닙니다. 다이어리는 원본의 투명 바인더, 표지·링 여닫기, 사진·마스킹테이프, 입체 스티커, 페이지 넘김, 편집/취소/게시 UI를 사용합니다. 에셋함과 사진의 SAM 2 선택 창은 Flutter입니다.
 
 스티커의 테두리·볼록 메시·유광 GLB 생성 함수는 [goodmorning-3d](https://github.com/bloodmoon3929/goodmorning-3d)의 `pipeline/sticker.py`에서 재사용합니다. 홈의 기존 샘플 배치는 원본 방식대로 브라우저에 보관하고, 생성한 에셋과 앱 다이어리는 PC의 DB에 저장합니다.
