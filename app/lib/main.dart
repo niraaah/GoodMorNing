@@ -12,6 +12,7 @@ import 'studio_dialog.dart';
 import 'asset_actions.dart';
 import 'goods_match_dialog.dart';
 import 'account_dialog.dart';
+import 'nearby.dart';
 import 'package:web/web.dart' as web;
 
 const ink = Color(0xff294653),
@@ -86,7 +87,9 @@ class _StudioState extends State<Studio> {
       : 0;
   bool loading = true, tilt = false, saving = false, polling = false;
   bool stickerDialogOpen = false, trashDialogOpen = false;
-  bool accountDialogOpen = false;
+  bool accountDialogOpen = false, nearbyDialogOpen = false;
+  int nearbyAlertSerial = 0;
+  final nearby = NearbyController.instance;
   String accountLabel = '로그인';
   String search = '', saveStatus = '저장됨';
   Timer? poll, saveTimer;
@@ -101,15 +104,40 @@ class _StudioState extends State<Studio> {
   @override
   void initState() {
     super.initState();
+    nearby.addListener(nearbyChanged);
     load();
     poll = Timer.periodic(const Duration(seconds: 2), (_) => pollJobs());
   }
 
   @override
   void dispose() {
+    nearby.removeListener(nearbyChanged);
+    nearby.stop();
     poll?.cancel();
     saveTimer?.cancel();
     super.dispose();
+  }
+
+  void nearbyChanged() {
+    if (!mounted) return;
+    setState(() {});
+    if (nearby.alertSerial != nearbyAlertSerial) {
+      nearbyAlertSerial = nearby.alertSerial;
+      notify('근처에 굿모닝을 사용 중인 수집가가 있어요!');
+    }
+  }
+
+  Future<void> showNearby() async {
+    if (nearbyDialogOpen) return;
+    nearbyDialogOpen = true;
+    try {
+      await showStudioDialog<void>(
+        context: context,
+        builder: (_) => const NearbyDialog(),
+      );
+    } finally {
+      nearbyDialogOpen = false;
+    }
   }
 
   void notify(String text) {
@@ -504,6 +532,7 @@ class _StudioState extends State<Studio> {
                   : () async {
                       update(() => busy = true);
                       try {
+                        nearby.stop();
                         Api.useManualConnection(address.text, key.text);
                         final result = await Api.get('/api/health');
                         if (result['engine'] != 'sam2-gaussian')
@@ -562,6 +591,8 @@ class _StudioState extends State<Studio> {
           tab: tab,
           onNavigate: navigate,
           onAccount: showAccount,
+          onNearby: showNearby,
+          nearbyActive: nearby.active,
           accountLabel: accountLabel,
           connectionReady: health != null,
           connectionError: error,
@@ -601,6 +632,26 @@ class _StudioState extends State<Studio> {
                           ),
                         ),
                         const Spacer(),
+                        IconButton(
+                          onPressed: showNearby,
+                          tooltip: nearby.active
+                              ? '위치 공유 중 · 끄기/설정'
+                              : '근처 수집가 알림',
+                          constraints: const BoxConstraints(
+                            minWidth: 32,
+                            minHeight: 40,
+                          ),
+                          padding: const EdgeInsets.all(4),
+                          icon: Icon(
+                            nearby.active
+                                ? Icons.location_on
+                                : Icons.location_on_outlined,
+                            size: 20,
+                            color: nearby.active
+                                ? const Color(0xff168264)
+                                : ink,
+                          ),
+                        ),
                         TextButton(
                           onPressed: showAccount,
                           child: Text(

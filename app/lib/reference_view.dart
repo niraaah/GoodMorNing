@@ -12,7 +12,8 @@ class ReferenceView extends StatefulWidget {
   final bool connectionReady;
   final String? connectionError, pendingAsset, diaryId;
   final ValueChanged<String>? onAssetAdded, onError;
-  final VoidCallback? onAccount;
+  final VoidCallback? onAccount, onNearby;
+  final bool nearbyActive;
   final String accountLabel;
   const ReferenceView({
     super.key,
@@ -26,6 +27,8 @@ class ReferenceView extends StatefulWidget {
     this.onAssetAdded,
     this.onError,
     this.onAccount,
+    this.onNearby,
+    this.nearbyActive = false,
     this.accountLabel = '로그인',
   });
   @override
@@ -71,6 +74,7 @@ class _ReferenceViewState extends State<ReferenceView> {
       if (data is Map && data['source'] == 'goodmorning-reference') {
         if (data['type'] == 'ready') sync();
         if (data['type'] == 'account') widget.onAccount?.call();
+        if (data['type'] == 'nearby') widget.onNearby?.call();
         if (data['type'] == 'asset-added')
           widget.onAssetAdded?.call(data['id'].toString());
         if (data['type'] == 'error')
@@ -98,6 +102,7 @@ class _ReferenceViewState extends State<ReferenceView> {
         'pendingAsset': widget.pendingAsset,
         'diaryId': widget.diaryId,
         'accountLabel': widget.accountLabel,
+        'nearbyActive': widget.nearbyActive,
       }.jsify(),
       Uri.base.origin.toJS,
     );

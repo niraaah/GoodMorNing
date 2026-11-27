@@ -8,7 +8,16 @@
   connection.catch(() => {});
   const binaryRefs = new WeakMap(), files = new Map(), added = new Set();
   const send = (type, data={}) => parent.postMessage({source:'goodmorning-reference',type,...data}, location.origin);
-  let accountLabel='로그인', accountButton;
+  let accountLabel='로그인', accountButton, nearbyButton, nearbyPeekButton, nearbyActive=false;
+  function syncNearby() {
+    for(const button of [nearbyButton,nearbyPeekButton]) {
+      if(!button) continue;
+      button.textContent=nearbyActive?'📍 ON':'📍';
+      button.title=nearbyActive?'위치 공유 중 · 끄기/설정':'근처 수집가 알림';
+      button.setAttribute('aria-label',button.title);
+      button.setAttribute('aria-pressed',String(nearbyActive));
+    }
+  }
   document.addEventListener('DOMContentLoaded', () => {
     const topbar=document.querySelector('.topbar');
     if(!topbar) return;
@@ -21,7 +30,19 @@
       }
       send('account');
     };
-    topbar.append(accountButton);
+    nearbyButton=document.createElement('button');
+    nearbyButton.type='button';
+    nearbyButton.style.cssText='flex-shrink:0;border:0;background:transparent;color:#294653;padding:10px 4px;min-width:32px;min-height:40px;font:inherit;font-size:12px;cursor:pointer';
+    nearbyButton.onclick=()=>send('nearby');
+    nearbyPeekButton=nearbyButton.cloneNode(false);
+    nearbyPeekButton.id='gm-nearby-peek';
+    nearbyPeekButton.onclick=()=>send('nearby');
+    const nearbyStyle=document.createElement('style');
+    nearbyStyle.textContent='#gm-nearby-peek{display:none}.peek-page #gm-nearby-peek{display:block;position:fixed;top:max(12px,env(safe-area-inset-top));right:12px;z-index:50;background:#eef7fc;border-radius:20px}';
+    document.head.append(nearbyStyle);
+    document.body.append(nearbyPeekButton);
+    syncNearby();
+    topbar.append(nearbyButton,accountButton);
   });
   document.addEventListener('click', event => {
     const link=event.target.closest('a');
@@ -37,6 +58,7 @@
     const next=event.data;
     if(next.type!=='connection') return;
     accountLabel=next.accountLabel||'로그인';
+    nearbyActive=next.nearbyActive===true;syncNearby();
     if(accountButton) accountButton.textContent=accountLabel;
     pendingAsset=next.pendingAsset || null;
     if(next.error) { rejectConnection(new Error('GPU 서버에 연결하지 못했어요. 연결 후 다이어리를 다시 열어 주세요.')); return; }

@@ -65,7 +65,7 @@ def test_local_invalid_bearer_never_becomes_admin(client):
     assert auth.identify(request, key, False) == (None, None)
 
 
-def test_promoted_guest_is_revoked_and_logout_revokes_session(con, client):
+def test_promoted_guest_is_revoked_and_logout_revokes_session(con, client, monkeypatch):
     testclient, key = client
     visitor = guest_token(key)
     owner = 'guest-' + visitor.split('.')[1]
@@ -73,7 +73,12 @@ def test_promoted_guest_is_revoked_and_logout_revokes_session(con, client):
     request = Request({'type':'http', 'headers':[(b'authorization', ('Bearer '+visitor).encode())]})
     assert auth.identify(request, key, True) == (None, None)
     assert testclient.get('/auth/me', headers={'Authorization':'Bearer '+session}).json()['kind'] == 'member'
+    registry=auth.nearby.Registry()
+    monkeypatch.setattr(auth.nearby,'registry',registry)
+    registry.start(owner,auth.digest(session))
+    assert registry.entries
     assert testclient.post('/auth/logout', headers={'Authorization':'Bearer '+session}).status_code == 200
+    assert not registry.entries
     assert auth.member_session(con, session) is None
 
 
