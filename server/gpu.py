@@ -8,6 +8,7 @@ from pathlib import Path
 import numpy as np
 import onnxruntime as ort
 from PIL import Image
+from .segmentation import alpha_from_logits
 
 
 def adapters():
@@ -100,8 +101,4 @@ class Segmenter:
                      'input_boxes': np.array([[box]], np.float32) * 1024})
         scores, masks, _ = self.decoder.run(None, feed)
         pred = masks[0, 0, int(np.argmax(scores[0, 0]))]
-        # Interpolate logits before thresholding, as in the SAM 2 image processor.
-        logits = np.asarray(Image.fromarray(pred.astype('float32')).resize(image.size, Image.Resampling.BILINEAR))
-        pred = 1 / (1 + np.exp(-np.clip(logits, -20, 20)))
-        mask = Image.fromarray((pred * 255).astype('uint8'))
-        return np.asarray(mask, dtype=np.float64) / 255
+        return alpha_from_logits(pred, image.size)

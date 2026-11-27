@@ -135,3 +135,22 @@ def test_failed_exchange_consumes_state(client, monkeypatch):
     body = {k:start[k] for k in ('state','verifier')} | {'code':'isolated-code'}
     assert testclient.post('/auth/google/complete', json=body).status_code == 502
     assert testclient.post('/auth/google/complete', json=body).status_code == 400
+
+
+@pytest.mark.parametrize('credential', ['bearer', 'cookie'])
+@pytest.mark.parametrize('host,external,cf_ray,allowed', [
+    ('127.0.0.1', False, False, True),
+    ('127.0.0.1', True, False, False),
+    ('127.0.0.1', False, True, False),
+    ('public.example', False, False, False),
+])
+def test_owner_capability_is_local_only(credential, host, external, cf_ray, allowed):
+    from server.access import COOKIE, session
+    key = secrets.token_urlsafe(32)
+    headers = [(b'host', host.encode())]
+    if credential == 'bearer': headers.append((b'authorization', ('Bearer '+key).encode()))
+    else: headers.append((b'cookie', (COOKIE+'='+session(key)).encode()))
+    if cf_ray: headers.append((b'cf-ray', b'synthetic'))
+    request = Request({'type':'http', 'headers':headers, 'scheme':'http',
+                       'server':(host,8787), 'path':'/'})
+    assert auth.identify(request,key,external) == (('private',None) if allowed else (None,None))

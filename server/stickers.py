@@ -37,6 +37,8 @@ def generate(image_path, output, segmenter, options, progress, estimator=None):
     """
     output = Path(output)
     image = Image.open(image_path).convert('RGBA')
+    # Keep source detail for SAM2; reduce only after segmentation for the mesh.
+    source = image.copy()
     image.thumbnail((640, 640), Image.Resampling.LANCZOS)
     rgba = np.asarray(image, dtype=np.float64) / 255
     record = Recorder(output)
@@ -56,7 +58,9 @@ def generate(image_path, output, segmenter, options, progress, estimator=None):
         alpha = np.ones(alpha.shape)
         segmentation = 'full-photo'
     elif np.all(alpha > .99):
-        alpha = segmenter.mask(image, options.get('box'))
+        source_alpha = segmenter.mask(source, options.get('box'))
+        alpha = np.asarray(Image.fromarray(source_alpha.astype('float32')).resize(
+            image.size, Image.Resampling.BOX), dtype=np.float64)
         segmentation = 'sam2.1-' + ('directml' if 'DmlExecutionProvider' in segmenter.session.get_providers() else 'cpu')
     if np.count_nonzero(alpha > .5) < 80:
         raise ValueError('분리된 굿즈가 너무 작아요. 다른 사진이나 ‘배경 유지’를 선택해 주세요.')
@@ -107,7 +111,7 @@ def generate(image_path, output, segmenter, options, progress, estimator=None):
     record.sticker(maps)
     record.compose()
     lap('sticker')
-    info = {'engine': 'sam2-gaussian', 'reconstruction': 'single-photo-gaussian-relief', 'segmentation': segmentation,
+    info = {'pipeline_version': 'sam2-opaque-mask-v2', 'engine': 'sam2-gaussian', 'reconstruction': 'single-photo-gaussian-relief', 'segmentation': segmentation,
             'depth': depth_source, 'process': {'image': 'process.jpg', 'stages': record.stages, 'seconds': seconds},
             'gaussians': gaussian_info,
             'vertices': len(mesh['pos']), 'triangles': len(mesh['idx']) // 3, 'max_height_mm': mesh['max_height_mm'],

@@ -210,19 +210,7 @@ def connect():
 
 @app.post('/auth/login',include_in_schema=False)
 async def login(request: Request):
-    try:
-        if int(request.headers.get('content-length','0'))>1024:
-            raise ValueError()
-        body=await request.json()
-        value=body.get('key','')
-        if not isinstance(value,str) or not hmac.compare_digest(value,app.state.access_key):
-            raise ValueError()
-    except (ValueError,AttributeError):
-        raise HTTPException(403,'접근 키가 올바르지 않습니다.')
-    response=JSONResponse({'ok':True})
-    response.set_cookie(COOKIE,session(app.state.access_key),httponly=True,samesite='strict',
-                        secure=request.url.scheme=='https' or request.headers.get('x-forwarded-proto')=='https',max_age=604800)
-    return response
+    raise HTTPException(410, '관리자 키를 이용한 외부 접속은 지원하지 않습니다. 공개 앱에서 로그인해 주세요.')
 
 
 @app.post('/auth/guest', include_in_schema=False)
@@ -391,7 +379,8 @@ def file(ident: str, filename: str, request: Request):
     path = DATA / 'assets' / ident / filename
     if not path.is_file():
         raise HTTPException(404)
-    return FileResponse(path, media_type='model/gltf-binary' if filename.endswith('.glb') else None)
+    return FileResponse(path, media_type='model/gltf-binary' if filename.endswith('.glb') else None,
+                        headers={'Cache-Control': 'private, no-store'})
 
 
 notebook.register(app, DATA, connection, accessible, normalized_image, now)
