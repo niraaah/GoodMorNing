@@ -80,7 +80,7 @@ Flutter Web 안에서 원본 HTML/CSS/JS 프로토타입을 함께 사용하는 
 
 **검증:** 기존 20개 + 신규 22개, 총 42개 통과. 실제 컨테이너에서 파일·쓰기·UID/capability 및 금지 통신 차단, 검색 DB와 크롤러 인증, 허용 공개 robots.txt HTTPS HEAD 200, 샌드박스 활성 Chromium 빈 페이지 실행, 검색 모델 로드, 기존 API 응답을 확인했습니다. 사진 추론·실제 상품 수집·모바일 UI는 사용자 확인 대상으로 유지합니다.
 
-**로컬 적용:** 네이티브 검색을 격리 스택으로 전환했습니다. 기존 약 1.5GB 모델을 읽기 전용으로 재사용하고 DB 데이터/비밀번호를 유지했습니다. EmbeddingGemma 2는 로컬 CPU, SAM 2·YOLO는 기존 GPU API에서 실행합니다. PR·배포 결과는 후속 기록에 남깁니다.
+**로컬 적용:** 네이티브 검색을 격리 스택으로 전환했습니다. 기존 약 1.5GB 모델을 읽기 전용으로 재사용하고 DB 데이터/비밀번호를 유지했습니다. EmbeddingGemma 2는 로컬 CPU, SAM 2·YOLO는 기존 GPU API에서 실행합니다. 코드 근거: [a6da64a](https://github.com/niraaah/GoodMorNing/commit/a6da64a), [PR #9](https://github.com/niraaah/GoodMorNing/pull/9). 자동 검사·병합·배포 결과는 해당 PR과 연결된 Actions에서 확인합니다.
 
 **파일:** `containers/search/`, `server/goods/crawler_service.py`, 검색·수집 코드, `scripts/search_sandbox.py`, 설치/시작/종료 스크립트, `scripts/verify_search_sandbox.py`, `server/test_search_isolation.py`, CI·비밀 검사·README.
 
