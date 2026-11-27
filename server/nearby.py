@@ -154,7 +154,7 @@ class Location(Lease):
 def member(request):
     value=getattr(request.state,'member',None)
     if not value:
-        raise HTTPException(403,'근처 알림은 구글·카카오 로그인 후 켤 수 있어요.')
+        raise HTTPException(403,'근처 알림은 소셜 로그인 후 켤 수 있어요.')
     return value['owner'],value['token_hash']
 
 
