@@ -19,3 +19,6 @@
 - Database: PostgreSQL 17 (PostgreSQL License) with the pgvector extension 0.8.7 (PostgreSQL License), run from the Docker image `pgvector/pgvector:0.8.7-pg17` (https://github.com/pgvector/pgvector). Python access uses psycopg 3 and psycopg-pool (LGPL-3.0, unmodified, installed from PyPI) and pgvector-python (MIT).
 
 This repository does not replace or relicense the upstream projects. Their notices and applicable license terms remain with their components. Refer to the linked source repositories for terms covering original artwork, examples and model weights.
+
+
+네이버 로그인 버튼: NAVER 공식 한국어 Light green narrow H48 PNG를 수정 없이 사용합니다. NAVER 상표 및 로그인 버튼 사용 가이드를 따릅니다. 출처: https://developers.naver.com/docs/login/bi/bi.md (2026-11-27 다운로드).

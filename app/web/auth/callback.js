@@ -9,7 +9,7 @@
   try {
     const pending=JSON.parse(sessionStorage.getItem('goodmorning-oauth')||'null');
     const provider=location.pathname.split('/').pop().replace('.html','');
-    if(!['google','kakao'].includes(provider) || !pending || pending.provider!==provider ||
+    if(!['google','kakao','naver'].includes(provider) || !pending || pending.provider!==provider ||
        !Number.isFinite(pending.expires) || pending.expires<Date.now() || pending.state!==query.get('state')) {
       throw Error('로그인 요청이 만료되었어요. 앱으로 돌아가 다시 시작해 주세요.');
     }

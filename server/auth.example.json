@@ -4,5 +4,8 @@
   "GOOGLE_CALLBACK_URL": "https://niraaah.github.io/GoodMorNing/auth/google.html",
   "KAKAO_CLIENT_ID": "",
   "KAKAO_CLIENT_SECRET": "",
-  "KAKAO_CALLBACK_URL": "https://niraaah.github.io/GoodMorNing/auth/kakao.html"
+  "KAKAO_CALLBACK_URL": "https://niraaah.github.io/GoodMorNing/auth/kakao.html",
+  "NAVER_LOGIN_CLIENT_ID": "",
+  "NAVER_LOGIN_CLIENT_SECRET": "",
+  "NAVER_LOGIN_CALLBACK_URL": "https://niraaah.github.io/GoodMorNing/auth/naver.html"
 }

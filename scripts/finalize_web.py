@@ -33,7 +33,7 @@ callback = root / 'auth/callback.js'
 if callback.exists():
     callback_name = f'callback.{hashlib.sha256(callback.read_bytes()).hexdigest()[:16]}.js'
     (callback.parent / callback_name).write_bytes(callback.read_bytes())
-    for provider in ('google', 'kakao'):
+    for provider in ('google', 'kakao', 'naver'):
         page = callback.parent / (provider+'.html')
         page.write_text(page.read_text(encoding='utf-8').replace('src="callback.js"', f'src="{callback_name}"'), encoding='utf-8')
 print(f'Published immutable JavaScript bundles: {revision}')

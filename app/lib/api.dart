@@ -176,7 +176,7 @@ class Api {
     bool privacy,
     bool age14,
   ) async {
-    if (!['google', 'kakao'].contains(provider))
+    if (!['google', 'kakao', 'naver'].contains(provider))
       throw Exception('지원하지 않는 로그인 방식이에요.');
     final providers = await get('/auth/providers');
     final callback = Uri.parse(providers[provider]['callback_url'] as String);

@@ -47,7 +47,7 @@ def known_secrets():
     auth=ROOT/'data/auth.local.json'
     if auth.exists():
         body=json.loads(auth.read_text(encoding='utf-8-sig'))
-        for name in ('GOOGLE_CLIENT_ID','GOOGLE_CLIENT_SECRET','KAKAO_CLIENT_ID','KAKAO_CLIENT_SECRET'):
+        for name in ('GOOGLE_CLIENT_ID','GOOGLE_CLIENT_SECRET','KAKAO_CLIENT_ID','KAKAO_CLIENT_SECRET','NAVER_LOGIN_CLIENT_ID','NAVER_LOGIN_CLIENT_SECRET'):
             add(body.get(name))
     for filename in ('access-link.txt','pages-link.txt'):
         path=ROOT/'logs'/filename
