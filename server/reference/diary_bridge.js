@@ -44,6 +44,40 @@
     document.body.append(nearbyPeekButton);
     syncNearby();
     topbar.append(nearbyButton,accountButton);
+    const separators=new Map();
+    let headerFrame=null;
+    function updateHeader() {
+      headerFrame=null;
+      let first=true;
+      for(const button of topbar.querySelectorAll('button')) {
+        let separator=separators.get(button);
+        if(!separator) {
+          separator=document.createElement('span');
+          separator.className='gm-header-divider';separator.textContent='|';
+          separator.setAttribute('aria-hidden','true');separator.hidden=true;
+          button.before(separator);separators.set(button,separator);
+        }
+        const visible=button.getClientRects().length>0 && getComputedStyle(button).visibility!=='hidden';
+        const hidden=!visible || first;
+        if(separator.hidden!==hidden) separator.hidden=hidden;
+        if(visible) first=false;
+      }
+    }
+    function scheduleHeader() {
+      if(headerFrame===null) headerFrame=requestAnimationFrame(updateHeader);
+    }
+    // Editing, fullscreen and sensor availability can each hide a different button.
+    const headerObserver=new MutationObserver(scheduleHeader);
+    headerObserver.observe(topbar,{subtree:true,attributes:true,attributeFilter:['hidden','class','style']});
+    headerObserver.observe(document.body,{attributes:true,attributeFilter:['class']});
+    const post=document.getElementById('post');
+    if(post) headerObserver.observe(post,{attributes:true,attributeFilter:['class']});
+    window.addEventListener('resize',scheduleHeader);
+    window.addEventListener('pagehide',()=>{
+      headerObserver.disconnect();cancelAnimationFrame(headerFrame);
+      window.removeEventListener('resize',scheduleHeader);
+    },{once:true});
+    updateHeader();
   });
   document.addEventListener('click', event => {
     const link=event.target.closest('a');

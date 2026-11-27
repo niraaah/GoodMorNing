@@ -3,6 +3,17 @@ from pathlib import Path
 from repair_diary import repair
 
 def adapt(html):
+    # The prototype's CSS starts open; use the same state before any async load.
+    initial = "let diaryOpen = visitingDiary || newDiaryPage || params.has('open');"
+    if html.count(initial) != 1:
+        raise ValueError('Review pinned diary initial cover state.')
+    html = html.replace(initial, 'let diaryOpen = demo;')
+    html = html.replace('</head>', '<script>if(new URLSearchParams(location.search).has("magnets"))document.documentElement.setAttribute("data-gm-diary-boot", "");</script></head>', 1)
+    # Re-enable transitions only after the initial pose has been painted.
+    initial_sync = 'let saving = false;\nsyncDiaryBinder();'
+    if html.count(initial_sync) != 1:
+        raise ValueError('Review pinned diary initial binder synchronization.')
+    html = html.replace(initial_sync, initial_sync + '\nrequestAnimationFrame(() => requestAnimationFrame(() => document.documentElement.removeAttribute("data-gm-diary-boot")));')
     html = html.replace('    const product = productCatalog[key] ?? {', '''    const product = (item.goods && isWebUrl(item.url) ? {
       title: item.goods.title || item.name,
       note: item.goods.affiliate ? '쿠팡 파트너스 링크를 통해 구매하면 운영자가 일정액의 수수료를 제공받을 수 있습니다. 가격·옵션·배송비는 판매처에서 확인해 주세요.' : '내가 확인하고 연결한 굿즈예요.',
