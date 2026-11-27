@@ -11,6 +11,7 @@ import 'photo_selection.dart';
 import 'studio_dialog.dart';
 import 'asset_actions.dart';
 import 'goods_match_dialog.dart';
+import 'account_dialog.dart';
 import 'package:web/web.dart' as web;
 
 const ink = Color(0xff294653),
@@ -85,6 +86,8 @@ class _StudioState extends State<Studio> {
       : 0;
   bool loading = true, tilt = false, saving = false, polling = false;
   bool stickerDialogOpen = false, trashDialogOpen = false;
+  bool accountDialogOpen = false;
+  String accountLabel = '로그인';
   String search = '', saveStatus = '저장됨';
   Timer? poll, saveTimer;
   final pending = <String, String>{};
@@ -137,6 +140,7 @@ class _StudioState extends State<Studio> {
         Api.get('/api/diaries'),
         Api.get('/api/jobs'),
         Api.get('/api/health'),
+        Api.get('/auth/me'),
       ]);
       if (!mounted) return;
       setState(() {
@@ -144,6 +148,7 @@ class _StudioState extends State<Studio> {
         diaries = List<Map<String, dynamic>>.from(result[1]);
         jobs = List<Map<String, dynamic>>.from(result[2]);
         health = Map<String, dynamic>.from(result[3]);
+        accountLabel = result[4]['kind'] == 'member' ? '내 계정' : '로그인';
         diaryId ??= diaries.firstOrNull?['id'];
         loading = false;
         error = null;
@@ -536,6 +541,19 @@ class _StudioState extends State<Studio> {
 
   void navigate(int value) => setState(() => tab = value);
 
+  Future<void> showAccount() async {
+    if (accountDialogOpen) return;
+    accountDialogOpen = true;
+    try {
+      await showStudioDialog<void>(
+        context: context,
+        builder: (_) => const AccountDialog(),
+      );
+    } finally {
+      accountDialogOpen = false;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     if (tab == 0 || tab == 2 || tab == 3) {
@@ -543,6 +561,8 @@ class _StudioState extends State<Studio> {
         body: ReferenceView(
           tab: tab,
           onNavigate: navigate,
+          onAccount: showAccount,
+          accountLabel: accountLabel,
           connectionReady: health != null,
           connectionError: error,
           diaryId: diaryId,
@@ -581,6 +601,13 @@ class _StudioState extends State<Studio> {
                           ),
                         ),
                         const Spacer(),
+                        TextButton(
+                          onPressed: showAccount,
+                          child: Text(
+                            accountLabel,
+                            style: const TextStyle(fontSize: 12),
+                          ),
+                        ),
                         TextButton(
                           onPressed: health == null ? load : connectServer,
                           child: Text(

@@ -7,7 +7,7 @@ from pathlib import Path
 root = Path(__file__).resolve().parent.parent / 'app/build/web'
 main = (root / 'main.dart.js').read_bytes()
 release = hashlib.sha256(main)
-for name in ('reference/index.html', 'reference/diary_bridge.js', 'scene/scene.js'):
+for name in ('reference/index.html', 'reference/diary_bridge.js', 'scene/scene.js', 'auth/callback.js'):
     source = root / name
     if source.exists():
         release.update(source.read_bytes())
@@ -29,4 +29,11 @@ if bridge.exists():
     (bridge.parent / bridge_name).write_bytes(bridge.read_bytes())
     reference = bridge.parent / 'index.html'
     reference.write_text(reference.read_text(encoding='utf-8').replace('./diary_bridge.js', './'+bridge_name), encoding='utf-8')
+callback = root / 'auth/callback.js'
+if callback.exists():
+    callback_name = f'callback.{hashlib.sha256(callback.read_bytes()).hexdigest()[:16]}.js'
+    (callback.parent / callback_name).write_bytes(callback.read_bytes())
+    for provider in ('google', 'kakao'):
+        page = callback.parent / (provider+'.html')
+        page.write_text(page.read_text(encoding='utf-8').replace('src="callback.js"', f'src="{callback_name}"'), encoding='utf-8')
 print(f'Published immutable JavaScript bundles: {revision}')

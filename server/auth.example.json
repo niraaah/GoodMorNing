@@ -1,0 +1,8 @@
+{
+  "GOOGLE_CLIENT_ID": "",
+  "GOOGLE_CLIENT_SECRET": "",
+  "GOOGLE_CALLBACK_URL": "https://niraaah.github.io/GoodMorNing/auth/google.html",
+  "KAKAO_CLIENT_ID": "",
+  "KAKAO_CLIENT_SECRET": "",
+  "KAKAO_CALLBACK_URL": "https://niraaah.github.io/GoodMorNing/auth/kakao.html"
+}

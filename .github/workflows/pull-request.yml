@@ -28,9 +28,9 @@ jobs:
         with:
           python-version: '3.12'
       - name: Install database test dependencies
-        run: pip install 'psycopg[binary]==3.3.9' 'psycopg-pool==3.3.3' 'pgvector==0.5.1' 'numpy==2.5.5' 'pytest==9.2.0'
+        run: pip install 'psycopg[binary]==3.3.9' 'psycopg-pool==3.3.3' 'pgvector==0.5.1' 'numpy==2.5.5' 'pytest==9.2.0' 'fastapi==0.165.0' 'httpx==0.28.1'
       - name: Check isolated database integrity
-        run: python -m pytest server/test_diary_store.py -q
+        run: python -m pytest server/test_diary_store.py server/test_social_auth.py -q
   build:
     runs-on: ubuntu-latest
     steps:

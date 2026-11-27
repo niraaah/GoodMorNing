@@ -22,7 +22,7 @@ from PIL import Image
 from .gpu import Segmenter
 from .depth import DepthEstimator
 from .stickers import generate, normalized_image
-from . import notebook, asset_trash, admin
+from . import notebook, asset_trash, admin, social_auth
 from .db import Jsonb, connection
 from .goods import api as goods_api
 from .goods import catalog
@@ -148,11 +148,9 @@ async def same_origin(request: Request, call_next):
         if origin not in ALLOWED_ORIGINS and (parsed.scheme not in ('http', 'https') or parsed.netloc != request.headers.get('host')):
             return JSONResponse({'detail': '다른 사이트에서 보낸 요청은 허용되지 않습니다.'}, 403)
     external_frontend = origin in ALLOWED_ORIGINS and urlsplit(origin).netloc != request.headers.get('host')
-    private = authorized(request, app.state.access_key) or not (requires_access(request) or external_frontend)
-    visitor = guest_owner(request, app.state.access_key)
-    request.state.owner = 'private' if private else visitor
-    if request.url.path not in ('/connect','/auth/login','/auth/guest') and not private and not visitor:
-        if request.url.path.startswith(('/api/','/files/')):
+    request.state.owner, request.state.member = social_auth.identify(request, app.state.access_key, external_frontend)
+    if request.url.path not in ({'/connect','/auth/login','/auth/guest'} | social_auth.PUBLIC_PATHS) and not request.state.owner:
+        if request.url.path.startswith(('/api/','/files/','/auth/')):
             return JSONResponse({'detail':'접속 링크로 먼저 로그인해 주세요.'},401)
         return RedirectResponse('/connect',status_code=303)
     response=await call_next(request)
@@ -362,6 +360,7 @@ notebook.register(app, DATA, connection, accessible, normalized_image, now)
 goods_api.register(app, connection, uploaded_image)
 asset_trash.register(app, connection, accessible, asset_dict, now, SAMPLES)
 admin.register(app)
+social_auth.register(app)
 
 app.mount('/scene', StaticFiles(directory=ROOT / 'server' / 'scene', html=True), name='scene')
 

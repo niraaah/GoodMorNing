@@ -91,3 +91,10 @@ API 키 없이도 허용된 공식몰의 Scrapy/Playwright 수집 경로로 후�
 `python scripts/migrate_postgres.py`는 `data/goodmorning.sqlite3`을 `data/backups/`에 백업한 뒤, 그 사본을 PostgreSQL에 한 트랜잭션으로 옮겨 보고 되돌린다(연습). 두 서버를 멈춘 뒤 `--apply`로 실제 이행한다. 진행 중인 작업이 있거나, 대상 PostgreSQL에 이미 자료가 있거나, 표별 행 수·임베딩 차원이 맞지 않으면 중단한다. 원본 SQLite 파일과 `data/` 아래 파일은 바꾸지 않는다. 이전의 SQLite 전용 `scripts/migrate_catalog.py`는 카탈로그 표가 PostgreSQL 스키마에 포함되면서 삭제했다.
 
 상품 수집·사진 검색·휴대폰 조작의 기능 검증은 사용자 진행 범위다. DB 구조 적용과 무결성 확인이 실제 판매처 수집 성공이나 검색 품질을 보장하지 않는다.
+
+
+## 소셜 로그인
+
+`account_profiles`는 회원 소유권·표시 이름, `account_sessions`는 만료·폐기 가능한 앱 세션 해시, `oauth_attempts`는 단회 OAuth 요청 검증값을 저장합니다. 기존 `auth_identities`의 `(provider, subject)`로 구글·카카오 계정을 구분하며, 비밀번호와 제공자 액세스 토큰은 저장하지 않습니다. 조회 전용 역할에는 세션/OAuth 테이블 SELECT 권한을 주지 않습니다. 설정 및 자료 연결 규칙은 [로그인 안내](social-login.md)를 참고하세요.
+
+로컬 적용은 두 API 서버를 멈춘 뒤 `python scripts/migrate_social_auth.py`로 백업·기존 전체 테이블 내용 검증·추가 테이블 설치를 수행합니다. 새 설치에서는 DB 초기화 시 포함됩니다.
