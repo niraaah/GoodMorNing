@@ -9,7 +9,6 @@ class Api {
   static String base = const String.fromEnvironment('API_BASE');
   static String token = '';
   static bool _automaticReady = false;
-  static bool _explicitConnection = false;
   static final _images = <String, Future<Uint8List>>{};
   static bool get hosted => Uri.base.host.endsWith('github.io');
   static bool get configured => base.isNotEmpty || !hosted;
@@ -67,12 +66,13 @@ class Api {
       }
     }
     web.window.localStorage.removeItem('goodmorning-clear-browser');
-    base = web.window.localStorage.getItem('goodmorning-api') ?? base;
-    token = web.window.sessionStorage.getItem('goodmorning-token') ?? '';
-    final fragment = Uri.splitQueryString(Uri.base.fragment);
-    if (fragment.containsKey('server')) {
-      _explicitConnection = true;
-      configure(fragment['server']!, fragment['key'] ?? '');
+    // Only ordinary user sessions belong in the public app. Legacy owner links
+    // must never restore administrator credentials or override server discovery.
+    token = userSession(web.window.sessionStorage.getItem('goodmorning-token'));
+    if (token.isEmpty)
+      web.window.sessionStorage.removeItem('goodmorning-token');
+    web.window.localStorage.removeItem('goodmorning-api');
+    if (Uri.base.fragment.isNotEmpty) {
       web.window.history.replaceState(
         null,
         '',
@@ -81,8 +81,27 @@ class Api {
     }
   }
 
+  static String userSession(String? value) =>
+      value != null &&
+          (value.startsWith('guest.') || value.startsWith('member.'))
+      ? value
+      : '';
+
+  static void resetConnection() {
+    _automaticReady = false;
+  }
+
+  static String errorMessage(Object error) {
+    if (error is http.ClientException ||
+        error is TimeoutException ||
+        error is FormatException) {
+      return '연결이 원활하지 않아요. 잠시 후 다시 시도해 주세요.';
+    }
+    return error.toString().replaceFirst('Exception: ', '');
+  }
+
   static Future<void> autoConnect() async {
-    if (!hosted || _automaticReady || _explicitConnection) return;
+    if (!hosted || _automaticReady) return;
     final configResponse = await http
         .get(
           staticUri('runtime-config.json').replace(
@@ -96,16 +115,19 @@ class Api {
       throw Exception('자동 연결 정보를 불러오지 못했어요. 잠시 후 다시 시도해 주세요.');
     final config = jsonDecode(configResponse.body) as Map<String, dynamic>;
     final address = config['apiBase'] as String? ?? '';
-    if (address.isEmpty) throw Exception('GPU 서버 주소가 아직 배포되지 않았어요.');
-    final visitorToken =
-        web.window.localStorage.getItem('goodmorning-visitor-token') ?? '';
+    if (address.isEmpty) throw Exception('서비스 연결을 준비 중이에요. 잠시 후 다시 시도해 주세요.');
+    final visitorToken = userSession(
+      web.window.localStorage.getItem('goodmorning-visitor-token'),
+    );
+    if (visitorToken.isEmpty)
+      web.window.localStorage.removeItem('goodmorning-visitor-token');
     // Restore an unclaimed visitor collection after an expired member session.
     // Do not overwrite that collection's capability with a new guest token.
     for (final candidate in {
       token,
       visitorToken,
     }.where((value) => value.isNotEmpty)) {
-      configure(address, candidate);
+      _configure(address, candidate);
       final response = await http
           .get(uri('/auth/me'), headers: headers)
           .timeout(const Duration(seconds: 20));
@@ -114,9 +136,9 @@ class Api {
         return;
       }
       if (![401, 403].contains(response.statusCode))
-        throw Exception('PC의 GPU 서버가 응답하지 않아요. 잠시 후 다시 시도해 주세요.');
+        throw Exception('잠시 연결이 끊겼어요. 다시 시도해 주세요.');
     }
-    configure(address, '');
+    _configure(address, '');
     final response = await http
         .post(uri('/auth/guest'))
         .timeout(const Duration(seconds: 20));
@@ -127,7 +149,7 @@ class Api {
     _automaticReady = true;
   }
 
-  static void configure(String server, String key) {
+  static void _configure(String server, String key) {
     final parsed = Uri.tryParse(server.trim());
     if (parsed == null ||
         !parsed.hasAuthority ||
@@ -138,18 +160,12 @@ class Api {
         parsed.hasQuery ||
         parsed.hasFragment ||
         !['', '/'].contains(parsed.path)) {
-      throw const FormatException('https://로 시작하는 서버 주소를 입력해 주세요.');
+      throw const FormatException('서비스 연결 정보를 확인하지 못했어요.');
     }
     base = parsed.origin;
     token = key.trim();
     _images.clear();
-    web.window.localStorage.setItem('goodmorning-api', base);
     web.window.sessionStorage.setItem('goodmorning-token', token);
-  }
-
-  static void useManualConnection(String server, String key) {
-    configure(server, key);
-    _explicitConnection = true;
   }
 
   static Future<void> socialLogin(
@@ -219,13 +235,14 @@ class Api {
       Uri.parse('${base.isEmpty ? Uri.base.origin : base}$path');
   static dynamic check(http.Response response) {
     if (response.statusCode == 401 || response.statusCode == 403) {
-      throw Exception('GPU 서버 연결에서 주소와 접근 키를 확인해 주세요.');
+      _automaticReady = false;
+      throw Exception('접속이 만료됐어요. 다시 연결하거나 로그인해 주세요.');
     }
     final dynamic data;
     try {
       data = jsonDecode(utf8.decode(response.bodyBytes));
     } catch (_) {
-      throw Exception('서버 주소를 확인해 주세요. API 응답이 아닙니다.');
+      throw Exception('서비스 응답을 읽지 못했어요. 잠시 후 다시 시도해 주세요.');
     }
     if (response.statusCode >= 400) {
       throw Exception(

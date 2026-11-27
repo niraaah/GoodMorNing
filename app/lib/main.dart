@@ -182,7 +182,8 @@ class _StudioState extends State<Studio> {
       if (mounted)
         setState(() {
           loading = false;
-          error = e.toString();
+          health = null;
+          error = Api.errorMessage(e);
         });
       return;
     }
@@ -224,7 +225,8 @@ class _StudioState extends State<Studio> {
       if (mounted)
         setState(() {
           loading = false;
-          error = e.toString();
+          health = null;
+          error = Api.errorMessage(e);
         });
     }
   }
@@ -471,7 +473,7 @@ class _StudioState extends State<Studio> {
           'id': uploadId,
           'name': stickerName,
           'state': 'failed',
-          'message': '사진 전송 실패: $e',
+          'message': '사진 전송 실패: ${Api.errorMessage(e)}',
         });
       });
       notify('사진을 보내지 못했어요. 에셋 화면에서 오류를 확인해 주세요.');
@@ -516,98 +518,16 @@ class _StudioState extends State<Studio> {
       ),
     ),
   );
-  Future<void> connectServer() async {
-    final address = TextEditingController(text: Api.base);
-    final key = TextEditingController(text: Api.token);
-    String? failure;
-    bool busy = false;
-    final connected = await showStudioDialog<bool>(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, update) => AlertDialog(
-          title: const Text('GPU 서버 연결'),
-          content: SizedBox(
-            width: 380,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Text(
-                  'PC에서 실행한 서버의 외부 주소와 접근 키를 입력해 주세요. 사진과 다이어리는 PC에 저장됩니다.',
-                  style: TextStyle(fontSize: 13, height: 1.7),
-                ),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: address,
-                  decoration: const InputDecoration(
-                    labelText: '서버 주소',
-                    hintText: 'https://…trycloudflare.com',
-                  ),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: key,
-                  obscureText: true,
-                  decoration: const InputDecoration(labelText: '접근 키'),
-                ),
-                if (failure != null)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 12),
-                    child: Text(
-                      failure!,
-                      style: const TextStyle(color: Colors.red, fontSize: 12),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: busy ? null : () => Navigator.pop(ctx),
-              child: const Tooltip(
-                message: '닫기',
-                child: Icon(Icons.close, semanticLabel: '닫기'),
-              ),
-            ),
-            FilledButton(
-              onPressed: busy
-                  ? null
-                  : () async {
-                      update(() => busy = true);
-                      try {
-                        nearby.stop();
-                        Api.useManualConnection(address.text, key.text);
-                        final result = await Api.get('/api/health');
-                        if (result['engine'] != 'sam2-gaussian')
-                          throw Exception('굿모닝 GPU 서버 주소를 입력해 주세요.');
-                        if (ctx.mounted) Navigator.pop(ctx, true);
-                      } catch (e) {
-                        if (ctx.mounted)
-                          update(() {
-                            failure = e.toString();
-                            busy = false;
-                          });
-                      }
-                    },
-              child: Text(busy ? '연결 중…' : '연결'),
-            ),
-          ],
-        ),
-      ),
-    );
-    address.dispose();
-    key.dispose();
-    if (connected == true && mounted) {
-      setState(() {
-        assets = [];
-        diaries = [];
-        jobs = [];
-        diaryId = null;
-        selected = null;
-        health = null;
-        loading = true;
-      });
-      await load();
-    }
+  Future<void> reconnect() async {
+    if (loading) return;
+    nearby.stop();
+    Api.resetConnection();
+    setState(() {
+      loading = true;
+      health = null;
+      error = null;
+    });
+    await load();
   }
 
   void navigate(int value) => setState(() => tab = value);
@@ -712,7 +632,9 @@ class _StudioState extends State<Studio> {
                           ),
                         ),
                         TextButton(
-                          onPressed: health == null ? load : connectServer,
+                          onPressed: loading || health != null
+                              ? null
+                              : reconnect,
                           child: Text(
                             health == null ? '다시 연결' : '연결됨',
                             style: const TextStyle(fontSize: 12),
@@ -733,7 +655,7 @@ class _StudioState extends State<Studio> {
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 const Text(
-                                  'GPU 서버에 연결할 수 없어요',
+                                  '수집방을 불러오지 못했어요',
                                   style: TextStyle(
                                     fontSize: 20,
                                     fontWeight: FontWeight.bold,
@@ -742,8 +664,8 @@ class _StudioState extends State<Studio> {
                                 const SizedBox(height: 12),
                                 Text(
                                   error == null
-                                      ? 'GPU 서버를 연결하면 에셋과 다이어리를 불러올 수 있어요.'
-                                      : 'PC의 GPU 서버와 외부 연결이 켜져 있는지 확인해 주세요.',
+                                      ? '잠시 후 다시 시도해 주세요.'
+                                      : '잠시 연결이 끊겼어요. 저장된 자료는 그대로 보관돼요.',
                                   textAlign: TextAlign.center,
                                   style: const TextStyle(
                                     fontSize: 13,
@@ -752,14 +674,9 @@ class _StudioState extends State<Studio> {
                                 ),
                                 const SizedBox(height: 20),
                                 FilledButton(
-                                  onPressed: load,
-                                  child: const Text('다시 연결'),
+                                  onPressed: reconnect,
+                                  child: const Text('다시 시도'),
                                 ),
-                                if (Api.configured)
-                                  TextButton(
-                                    onPressed: connectServer,
-                                    child: const Text('연결 설정'),
-                                  ),
                               ],
                             ),
                           ),

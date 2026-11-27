@@ -73,8 +73,9 @@ def member_session(con, token):
 
 def identify(request, key, external_frontend):
     bearer = request.headers.get('authorization', '')
+    # Owner capabilities are local administration only, never public app sessions.
     if authorized(request, key):
-        return 'private', None
+        return ('private', None) if not (requires_access(request) or external_frontend) else (None, None)
     if bearer:
         token = bearer.removeprefix('Bearer ')
         if token.startswith('member.'):
