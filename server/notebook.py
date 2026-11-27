@@ -4,13 +4,9 @@ import io
 import json
 import re
 import struct
-from functools import partial
 from fastapi import Request, UploadFile, File, HTTPException
 from fastapi.responses import FileResponse
-from .db import Jsonb
-
-strict_json = partial(json.dumps, ensure_ascii=False, allow_nan=False)
-
+from .diary_store import ensure_user, store_page
 
 def initialize(con, data):
     # Tables are created from server/schema.sql.
@@ -75,8 +71,7 @@ def register(app, data, connection, accessible, normalized_image, now):
                     for child in value:
                         validate(child, depth + 1)
             validate(body)
-            con.execute('INSERT INTO notebook_pages VALUES(%s,%s,%s,%s) ON CONFLICT(owner,page_key) DO UPDATE SET body=excluded.body,updated=excluded.updated',
-                        (request.state.owner, key, Jsonb(body, dumps=strict_json), now()))
+            store_page(con, request.state.owner, key, body, now())
         return {'saved': True}
 
     @app.post('/api/notebook/files', status_code=201)
@@ -101,6 +96,7 @@ def register(app, data, connection, accessible, normalized_image, now):
         ident = hashlib.sha256(request.state.owner.encode() + b'\0' + content).hexdigest()
         (data / 'notebook-files' / ident).write_bytes(content)
         with connection() as con:
+            ensure_user(con, request.state.owner)
             con.execute('INSERT INTO notebook_files VALUES(%s,%s,%s,%s) ON CONFLICT DO NOTHING',
                         (ident, request.state.owner, name, mime))
         return {'__gmFile': ident, 'name': name, 'type': mime}

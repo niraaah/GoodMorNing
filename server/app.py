@@ -194,7 +194,11 @@ def automatic_session(request: Request):
     # A public browser gets only its own collection, never the private owner's key/data.
     if request.headers.get('origin') not in ALLOWED_ORIGINS:
         raise HTTPException(403, '앱에서 연결해 주세요.')
-    return JSONResponse({'token': guest_token(app.state.access_key)}, headers={'Cache-Control': 'no-store'})
+    from .diary_store import ensure_user
+    token = guest_token(app.state.access_key)
+    with connection() as con:
+        ensure_user(con, 'guest-' + token.split('.')[1])
+    return JSONResponse({'token': token}, headers={'Cache-Control': 'no-store'})
 
 
 @app.get('/api/health')

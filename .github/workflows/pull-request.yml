@@ -5,6 +5,32 @@ on:
 permissions:
   contents: read
 jobs:
+  database:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:0.8.7-pg17
+        env:
+          POSTGRES_DB: goodmorning
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 127.0.0.1:55432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+    env:
+      GOODMORNING_DATABASE_URL: host=127.0.0.1 port=55432 dbname=goodmorning user=postgres
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install database test dependencies
+        run: pip install 'psycopg[binary]==3.3.9' 'psycopg-pool==3.3.3' 'pgvector==0.5.1' 'numpy==2.5.5' 'pytest==9.2.0'
+      - name: Check isolated database integrity
+        run: python -m pytest server/test_diary_store.py -q
   build:
     runs-on: ubuntu-latest
     steps:
