@@ -268,8 +268,6 @@ def register(app):
         if not value.acknowledged or value.confirmation!=expected:
             raise HTTPException(422,'삭제 안내를 확인하고 확인 문구를 정확히 입력해 주세요.')
         with db.connection() as con:
-            recent=con.execute("SELECT 1 FROM account_sessions WHERE token_hash=%s AND created_at>now()-interval '10 minutes'",(user['token_hash'],)).fetchone()
-            if not recent:raise HTTPException(409,'다시 소셜 로그인한 뒤 10분 안에 탈퇴를 진행해 주세요.')
             if con.execute("SELECT 1 FROM jobs WHERE state IN ('queued','running') LIMIT 1").fetchone() or con.execute("SELECT 1 FROM goods_searches WHERE owner=%s AND state='running' LIMIT 1",(user['owner'],)).fetchone():
                 raise HTTPException(409,'진행 중인 스티커·검색 작업이 끝난 뒤 탈퇴해 주세요.')
         record_erasure(user['user_id'],user['owner'])

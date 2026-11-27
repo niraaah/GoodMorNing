@@ -217,8 +217,6 @@ def register(app):
                            'redirect_uri': config['callback_url'], 'state': state, 'scope': PROVIDERS[provider][3]})
         if not PROVIDERS[provider][3]:
             query=urlencode({'response_type':'code','client_id':config['client_id'],'redirect_uri':config['callback_url'],'state':state})
-        if provider == 'naver' and request.state.member:
-            query += '&auth_type=reauthenticate'
         return response({'authorize_url': PROVIDERS[provider][0]+'?'+query, 'state': state, 'verifier': verifier})
 
     @app.post('/auth/{provider}/complete')

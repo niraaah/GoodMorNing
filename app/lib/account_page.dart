@@ -57,14 +57,9 @@ class LegalPage extends StatelessWidget {
 }
 
 class AccountPage extends StatefulWidget {
-  final bool onboarding, resumeWithdrawal;
+  final bool onboarding;
   final String? signupTicket;
-  const AccountPage({
-    super.key,
-    this.onboarding = false,
-    this.signupTicket,
-    this.resumeWithdrawal = false,
-  });
+  const AccountPage({super.key, this.onboarding = false, this.signupTicket});
   @override
   State<AccountPage> createState() => _AccountPageState();
 }
@@ -122,10 +117,6 @@ class _AccountPageState extends State<AccountPage> {
         image = photo;
         name.text = me['name'] == '새 수집가' ? '' : me['name'] ?? '';
       });
-      if (widget.resumeWithdrawal)
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) withdraw();
-        });
     } catch (_) {
       if (mounted) setState(() => error = '계정 정보를 불러오지 못했어요. 서버 연결을 확인해 주세요.');
     }
@@ -178,40 +169,6 @@ class _AccountPageState extends State<AccountPage> {
         setState(() => error = e.toString().replaceFirst('Exception: ', ''));
     } finally {
       if (mounted) setState(() => busy = false);
-    }
-  }
-
-  Future<void> reauthenticate() async {
-    final proceed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('계정을 한 번 더 확인할게요'),
-        content: const Text(
-          '로그인한 지 시간이 지나 탈퇴 전에 계정 확인이 필요해요. 다시 로그인하면 탈퇴 확인 화면으로 돌아와요.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('취소'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('계속'),
-          ),
-        ],
-      ),
-    );
-    if (proceed != true || !mounted) return;
-    try {
-      NearbyController.instance.stop();
-      web.window.sessionStorage.setItem(
-        'goodmorning-withdraw-after-login',
-        DateTime.now().millisecondsSinceEpoch.toString(),
-      );
-      await Api.socialLogin(account!['provider']);
-    } catch (e) {
-      web.window.sessionStorage.removeItem('goodmorning-withdraw-after-login');
-      if (mounted) setState(() => error = Api.errorMessage(e));
     }
   }
 
@@ -311,10 +268,6 @@ class _AccountPageState extends State<AccountPage> {
         ),
       );
     } catch (e) {
-      if (e.toString().contains('다시 소셜 로그인한 뒤')) {
-        await reauthenticate();
-        return;
-      }
       if (mounted)
         setState(() => error = e.toString().replaceFirst('Exception: ', ''));
     } finally {
@@ -511,7 +464,7 @@ class _AccountPageState extends State<AccountPage> {
                       ),
                     ),
                     const Text(
-                      '탈퇴 중 필요한 경우에만 계정을 다시 확인해요. 진행 중인 생성·검색 작업이 있으면 끝난 뒤 다시 시도해 주세요.',
+                      '닉네임과 삭제 내용을 확인하면 탈퇴할 수 있어요. 진행 중인 생성·검색 작업이 있으면 끝난 뒤 다시 시도해 주세요.',
                       style: TextStyle(fontSize: 12, height: 1.6),
                     ),
                   ],

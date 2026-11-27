@@ -148,12 +148,9 @@ def test_withdraw_deletes_owned_content_all_sessions_and_old_guest_only(client,i
     assert '수집가' not in record and 'google' not in record and owner not in record
 
 
-def test_old_session_and_busy_job_prevent_erasure(client):
+def test_busy_job_prevents_erasure(client):
     http,admin=client;token,row=member(admin)
     body={'confirmation':'수집가one','acknowledged':True}
-    admin.execute("UPDATE account_sessions SET created_at=now()-interval '11 minutes'");admin.commit()
-    assert http.post('/auth/delete',headers=headers(token),json=body).status_code==409
-    admin.execute('UPDATE account_sessions SET created_at=now()')
     ident=uuid4().hex;admin.execute("INSERT INTO ownership VALUES('job',%s,%s)",(ident,row['owner']))
     admin.execute("INSERT INTO jobs VALUES(%s,'test','running',0,'',NULL,now())",(ident,));admin.commit()
     assert http.post('/auth/delete',headers=headers(token),json=body).status_code==409
@@ -208,3 +205,25 @@ def test_guest_tokens_expire_without_changing_owner(monkeypatch):
     assert access.guest_owner(request,'synthetic-only').startswith('guest-')
     monkeypatch.setattr(access.time,'time',lambda:start+30*86400)
     assert access.guest_owner(request,'synthetic-only') is None
+
+
+@pytest.mark.parametrize('age',['11 minutes','2 days'])
+def test_valid_older_session_can_withdraw_without_provider_token(client,age):
+    http,admin=client;token,row=member(admin)
+    admin.execute("UPDATE account_sessions SET created_at=now()-%s::interval",(age,));admin.commit()
+    accounts.discard_provider(auth.digest(token))
+    result=http.post('/auth/delete',headers=headers(token),json={'confirmation':'수집가one','acknowledged':True})
+    assert result.status_code==200 and result.json()['deleted']
+    assert result.json()['provider_unlinked'] is False
+    assert not admin.execute('SELECT 1 FROM account_profiles WHERE user_id=%s',(row['user_id'],)).fetchone()
+    assert http.get('/auth/me',headers=headers(token)).status_code==401
+
+@pytest.mark.parametrize('status',['expired','revoked'])
+def test_invalid_session_still_cannot_withdraw(client,status):
+    http,admin=client;token,row=member(admin)
+    if status=='expired':admin.execute("UPDATE account_sessions SET expires_at=now()-interval '1 second'")
+    else:admin.execute('UPDATE account_sessions SET revoked_at=now()')
+    admin.commit()
+    result=http.post('/auth/delete',headers=headers(token),json={'confirmation':'수집가one','acknowledged':True})
+    assert result.status_code==401
+    assert admin.execute('SELECT 1 FROM account_profiles WHERE user_id=%s',(row['user_id'],)).fetchone()
