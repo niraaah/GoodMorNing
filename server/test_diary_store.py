@@ -15,7 +15,7 @@ from server.diary_store import backfill, store_page
 @pytest.fixture
 def con():
     name = 'goodmorning_structure_test_' + uuid.uuid4().hex[:12]
-    admin_url = db.url()
+    admin_url = db.admin_url()
     with psycopg.connect(admin_url, autocommit=True) as admin:
         admin.execute(sql.SQL('CREATE DATABASE {}').format(sql.Identifier(name)))
     try:

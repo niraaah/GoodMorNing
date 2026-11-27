@@ -23,7 +23,7 @@ from .gpu import Segmenter
 from .depth import DepthEstimator
 from .stickers import generate, normalized_image
 from . import notebook, asset_trash, admin, social_auth
-from .db import Jsonb, connection
+from .db import Jsonb, connection, owner_scope, current_owner
 from .goods import api as goods_api
 from .goods import catalog
 from .access import COOKIE, load_key, session, requires_access, authorized, connect_page, guest_token, guest_owner
@@ -46,13 +46,13 @@ def initialize():
     (DATA / 'assets').mkdir(parents=True, exist_ok=True)
     (DATA / 'models').mkdir(exist_ok=True)
     app.state.access_key = load_key(DATA)
-    # Creates every table (server/schema.sql, server/goods/catalog.sql) in PostgreSQL.
+    # Runtime only validates offline-provisioned schema and restricted credentials.
     catalog.initialize()
     with connection() as con:
         notebook.initialize(con, DATA)
         asset_trash.initialize(con)
         goods_api.initialize(con)
-        con.execute("UPDATE jobs SET state='failed', message='서버가 재시작되어 중단됐어요. 사진을 다시 올려 주세요.' WHERE state IN ('queued','running')")
+        con.execute('SELECT public.gm_recover_jobs()')
         for ident, title in [('pochita', '포치타'), ('2026_11_24_08_15', '디무'), ('2026_11_24_08_16', '토끼 인형')]:
             src = ENGINE / 'assets' / ident
             if not (src / 'sticker.glb').exists():
@@ -62,6 +62,7 @@ def initialize():
             for filename in ('sticker.glb', 'sticker.png', 'sticker.json'):
                 if not (dest / filename).exists() and (src / filename).exists():
                     shutil.copy2(src / filename, dest / filename)
+            con.execute('INSERT INTO ownership VALUES(%s,%s,%s) ON CONFLICT DO NOTHING', ('asset',ident,'private'))
             con.execute('INSERT INTO assets VALUES(%s,%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING',
                         (ident, title, 'sticker', 'sam3d-sample', now(), Jsonb({'sample': True})))
         if con.execute('SELECT count(*) AS n FROM diaries').fetchone()['n'] == 0:
@@ -69,6 +70,7 @@ def initialize():
                      'date': datetime.now().strftime('%Y-%m-%d'), 'paper': '#fff9eb', 'placements': [
                          {'id': 'starter-1', 'asset_id': 'pochita', 'x': .28, 'y': .40, 'size': .32, 'rotation': -12},
                          {'id': 'starter-2', 'asset_id': '2026_11_24_08_16', 'x': .70, 'y': .64, 'size': .29, 'rotation': 11}]}
+            assign(con, 'diary', diary['id'], 'private')
             con.execute('INSERT INTO diaries VALUES(%s,%s,%s)', (diary['id'], Jsonb(diary), now()))
         catalog.backfill_links(con)
 
@@ -77,7 +79,7 @@ def accessible(con, kind, ident, owner):
     if kind == 'asset' and ident in SAMPLES:
         return True
     row = con.execute('SELECT owner FROM ownership WHERE kind=%s AND ident=%s', (kind, ident)).fetchone()
-    return (row['owner'] if row else 'private') == owner
+    return row is not None and row['owner'] == owner
 
 
 def assign(con, kind, ident, owner):
@@ -104,6 +106,7 @@ def worker():
             tasks.task_done()
             return
         ident, options = task
+        owner_token = current_owner.set(options['owner'])
         path = DATA / 'assets' / ident
         try:
             def progress(number, message):
@@ -111,9 +114,9 @@ def worker():
             info = generate(path / 'source.png', path, segmenter, options, progress, depth_estimator)
             if options.get('goods'): info['goods'] = options['goods']
             with connection() as con:
+                assign(con, 'asset', ident, options['owner'])
                 con.execute('INSERT INTO assets VALUES(%s,%s,%s,%s,%s,%s)',
                             (ident, options['name'], 'sticker', options['engine'], now(), Jsonb(info)))
-                assign(con, 'asset', ident, options.get('owner', 'private'))
                 catalog.link_asset(con,ident,options.get('owner','private'),options.get('goods'))
             update_job(ident, 'completed', 100, '에셋함에 저장했어요!', ident)
         except Exception as error:
@@ -121,12 +124,14 @@ def worker():
             message = str(error) if isinstance(error, (ValueError, RuntimeError)) else '변환 중 오류가 발생했어요. 다른 사진으로 다시 시도해 주세요.'
             update_job(ident, 'failed', 0, message)
         finally:
+            current_owner.reset(owner_token)
             tasks.task_done()
 
 
 @asynccontextmanager
 async def lifespan(app):
-    initialize()
+    with owner_scope('private'):
+        initialize()
     thread = threading.Thread(target=worker, daemon=True, name='sticker-worker')
     thread.start()
     yield
@@ -153,7 +158,8 @@ async def same_origin(request: Request, call_next):
         if request.url.path.startswith(('/api/','/files/','/auth/')):
             return JSONResponse({'detail':'접속 링크로 먼저 로그인해 주세요.'},401)
         return RedirectResponse('/connect',status_code=303)
-    response=await call_next(request)
+    with owner_scope(request.state.owner):
+        response=await call_next(request)
     response.headers['Referrer-Policy']='no-referrer'
     response.headers['X-Content-Type-Options']='nosniff'
     response.headers['X-Frame-Options']='SAMEORIGIN'
@@ -248,8 +254,8 @@ async def create_sticker(request: Request, photo: UploadFile = File(), name: str
     dest.mkdir()
     image.save(dest / 'source.png')
     with connection() as con:
-        con.execute('INSERT INTO jobs VALUES(%s,%s,%s,%s,%s,%s,%s)', (ident, name.strip(), 'queued', 0, '차례를 기다리고 있어요', None, now()))
         assign(con, 'job', ident, request.state.owner)
+        con.execute('INSERT INTO jobs VALUES(%s,%s,%s,%s,%s,%s,%s)', (ident, name.strip(), 'queued', 0, '차례를 기다리고 있어요', None, now()))
     try:
         tasks.put_nowait((ident, {'name': name.strip(), 'engine': engine, 'background': background, 'box': bounds, 'owner': request.state.owner, 'goods':goods}))
     except queue.Full:
@@ -266,8 +272,8 @@ async def add_photo(request: Request, photo: UploadFile = File(), name: str = Fo
     dest.mkdir()
     image.save(dest / 'sticker.png')
     with connection() as con:
-        con.execute('INSERT INTO assets VALUES(%s,%s,%s,%s,%s,%s)', (ident, name, 'photo', 'photo', now(), Jsonb({})))
         assign(con, 'asset', ident, request.state.owner)
+        con.execute('INSERT INTO assets VALUES(%s,%s,%s,%s,%s,%s)', (ident, name, 'photo', 'photo', now(), Jsonb({})))
         return asset_dict(con.execute('SELECT * FROM assets WHERE id=%s', (ident,)).fetchone())
 
 
@@ -314,8 +320,8 @@ def diaries(request: Request):
         if not result and request.state.owner != 'private':
             ident = request.state.owner + '-first'
             diary = {'id': ident, 'title': '나의 다이어리', 'date': datetime.now().strftime('%Y-%m-%d'), 'note': '', 'paper': '#fff9eb', 'placements': []}
-            con.execute('INSERT INTO diaries VALUES(%s,%s,%s) ON CONFLICT DO NOTHING', (ident, Jsonb(diary), now()))
             con.execute('INSERT INTO ownership VALUES(%s,%s,%s) ON CONFLICT DO NOTHING', ('diary', ident, request.state.owner))
+            con.execute('INSERT INTO diaries VALUES(%s,%s,%s) ON CONFLICT DO NOTHING', (ident, Jsonb(diary), now()))
             result = [diary]
         return result
 
@@ -336,10 +342,10 @@ def save_diary(ident: str, diary: Diary, request: Request):
         known = {row['id'] for row in con.execute('SELECT id FROM assets') if accessible(con, 'asset', row['id'], request.state.owner)}
         if any(p.asset_id not in known for p in diary.placements):
             raise HTTPException(422, '저장되지 않은 에셋은 붙일 수 없어요.')
-        con.execute('INSERT INTO diaries VALUES(%s,%s,%s) ON CONFLICT(id) DO UPDATE SET body=excluded.body,updated=excluded.updated',
-                    (ident, Jsonb(diary.model_dump(mode='json')), now()))
         if not exists:
             assign(con, 'diary', ident, request.state.owner)
+        con.execute('INSERT INTO diaries VALUES(%s,%s,%s) ON CONFLICT(id) DO UPDATE SET body=excluded.body,updated=excluded.updated',
+                    (ident, Jsonb(diary.model_dump(mode='json')), now()))
     return diary
 
 

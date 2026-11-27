@@ -5,6 +5,7 @@ import hmac
 import io
 import json
 import logging
+import os
 import subprocess
 import sys
 import tempfile
@@ -22,6 +23,8 @@ from pydantic import BaseModel, Field
 from .config import ROOT, DATA, MODEL_REVISION, settings
 from .coupang import search as coupang_search
 from . import catalog
+from .. import db
+db.select_service('search')
 
 log=logging.getLogger('goods-search')
 cache=DATA/'goods-cache'; cache.mkdir(parents=True,exist_ok=True)
@@ -62,7 +65,7 @@ app=FastAPI(lifespan=lifespan,docs_url=None,redoc_url=None,openapi_url=None)
 
 @app.middleware('http')
 async def authorize(request:Request,call_next):
-    expected=(DATA/'access.key').read_text(encoding='utf-8').strip()
+    expected=(DATA/'search-service.key').read_text(encoding='utf-8').strip()
     token=request.headers.get('authorization','').removeprefix('Bearer ')
     if not hmac.compare_digest(token,expected):
         from fastapi.responses import JSONResponse
@@ -96,6 +99,9 @@ def collect(query):
             try:
                 subprocess.run([sys.executable,'-m','server.goods.crawl',query,output],cwd=ROOT,
                     timeout=100,check=True,stdout=subprocess.DEVNULL,stderr=subprocess.PIPE,
+                    env={k:v for k,v in os.environ.items() if k.upper() in (
+                        'SYSTEMROOT','WINDIR','PATH','TEMP','TMP','USERPROFILE','LOCALAPPDATA',
+                        'APPDATA','PROGRAMFILES','PROGRAMFILES(X86)','COMSPEC','HOME','LANG','PYTHONIOENCODING')},
                     creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
                 data=json.loads(Path(output).read_text(encoding='utf-8'))
                 products.extend(data['products']);states.extend(data['sources'])

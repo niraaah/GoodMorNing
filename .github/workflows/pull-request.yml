@@ -19,7 +19,7 @@ jobs:
           --health-cmd "pg_isready -U postgres"
           --health-interval 5s --health-timeout 5s --health-retries 12
     env:
-      GOODMORNING_DATABASE_URL: host=127.0.0.1 port=55432 dbname=goodmorning user=postgres
+      GOODMORNING_ADMIN_DATABASE_URL: host=127.0.0.1 port=55432 dbname=goodmorning user=postgres
     steps:
       - uses: actions/checkout@v4
         with:
@@ -30,7 +30,7 @@ jobs:
       - name: Install database test dependencies
         run: pip install 'psycopg[binary]==3.3.9' 'psycopg-pool==3.3.3' 'pgvector==0.5.1' 'numpy==2.5.5' 'pytest==9.2.0' 'fastapi==0.165.0' 'httpx==0.28.1'
       - name: Check isolated database integrity
-        run: python -m pytest server/test_diary_store.py server/test_social_auth.py -q
+        run: python -m pytest server/test_diary_store.py server/test_social_auth.py server/test_db_security.py -q
   build:
     runs-on: ubuntu-latest
     steps:

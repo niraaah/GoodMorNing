@@ -3,10 +3,9 @@ $projectRoot=Split-Path $PSScriptRoot -Parent
 Set-Location $projectRoot
 $searchPython=Join-Path $projectRoot '.venv-search/Scripts/python.exe'
 if(-not(Test-Path -LiteralPath $searchPython)){Write-Output 'Search is not installed. Run scripts/setup-search.ps1.';exit 0}
-$keyPath=Join-Path $projectRoot 'data/access.key'
+$keyPath=Join-Path $projectRoot 'data/search-service.key'
 if(-not(Test-Path -LiteralPath $keyPath)){
-  & (Join-Path $projectRoot '.venv/Scripts/python.exe') -c 'from pathlib import Path; from server.access import load_key; p=Path("data"); p.mkdir(exist_ok=True); load_key(p)'
-  if($LASTEXITCODE -ne 0){throw 'Could not initialize the local service key.'}
+  throw 'Database security setup required. Run scripts/setup-postgres.ps1 first.'
 }
 $searchKey=(Get-Content -LiteralPath $keyPath -Raw).Trim()
 try {

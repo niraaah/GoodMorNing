@@ -1,5 +1,7 @@
 # GoodMorNing ☀️
 
+발표·보고용 [구현·수정 작업 이력](docs/WORK_LOG.md)과 [보안 설계·적용 결과](docs/SECURITY.md)를 함께 관리합니다.
+
 사진 속 굿즈를 모으고, 볼록 스티커로 만들어 다이어리를 꾸미는 **Flutter Web + 로컬 GPU 서버** 앱입니다.
 
 프론트는 **[GitHub Pages](https://niraaah.github.io/GoodMorNing/)**, GPU API와 데이터 저장소는 **사용자 Windows PC**에서 실행합니다. GitHub Actions는 main에 push할 때 Flutter 웹을 빌드해서 Pages에 배포하며, GPU 작업을 실행하는 서버는 아닙니다.
@@ -12,7 +14,7 @@
 
 ## 구현된 기능
 
-- 회원·다이어리 DB의 기초 구조를 추가했습니다. 기존 소유권을 사용자 UUID와 연결하고, 페이지 저장 시 다이어리·페이지·배치 테이블을 기존 JSON과 함께 갱신합니다. 속지·폴라로이드 메모·레이어 순서와 원본 데이터를 보존합니다. 로그인·회원 가입은 다음 단계이며 아직 제공하지 않습니다. [DB 구조와 이관 절차](docs/database.md)
+- 회원·다이어리 DB 구조, 구글·카카오 소셜 로그인 코드를 구현했습니다. 기존 소유권을 사용자 UUID와 연결하고, 페이지 저장 시 다이어리·페이지·배치 테이블을 기존 JSON과 함께 갱신합니다. 실제 로그인은 개발자 앱 키 등록 후 확인이 필요합니다. [DB 구조와 이관 절차](docs/database.md)
 
 - 다이어리 편집의 **이 장의 속지**에서 사진에 맞춤·크림·연분홍·하늘·민트·라벤더 색과 기본 줄노트·무지·모눈·도트 무늬를 선택합니다. **게시**하면 해당 장의 `paperStyle`로 저장하고, 편집 취소 시 기존 속지로 되돌립니다. **기본 속지**는 사진에 맞춘 원래 줄노트로 복원합니다. 기존 다이어리는 배경을 바꾸기 전까지 원래 방식으로 표시합니다.
 
@@ -136,11 +138,12 @@ GoodMorNing/
 │  └─ pubspec.yaml
 ├─ server/
 │  ├─ app.py                  FastAPI, 작업 큐, 파일 제공
-│  ├─ db.py                   PostgreSQL 연결 풀·표 생성·조회 전용 계정
+│  ├─ db.py                   제한된 PostgreSQL 연결 풀·트랜잭션별 소유자 전달
+│  ├─ db_security.py          오프라인 역할/권한 설정·12개 테이블 FORCE RLS
 │  ├─ diary_schema.sql        사용자·소유권 연결·다이어리·페이지·배치 구조
 │  ├─ diary_store.py          기존 JSON과 페이지·배치의 원자적 저장
 │  ├─ schema.sql              앱 표(에셋·작업·다이어리·페이지·휴지통·검색) 명세
-│  ├─ admin.py                /admin 조회 API (소유자 전용·읽기 전용)
+│  ├─ admin.py                /admin 조회 API (로컬 소유자 전용·읽기 전용)
 │  ├─ gpu.py                  GPU 선택·SAM 2 encoder/decoder 추론
 │  ├─ stickers.py             누끼 → 깊이 → 볼록 스티커 생성
 │  ├─ depth.py                YOLO26n-depth ONNX 깊이 추정
@@ -181,7 +184,9 @@ GoodMorNing/
 ├─ prototype/                 프로토타입 Git submodule
 ├─ sticker-engine/            goodmorning-3d Git submodule
 ├─ data/                      로컬 전용, Git 제외
-│  ├─ postgres.key            PostgreSQL 비밀번호 (DB 자료는 Docker 볼륨 goodmorning-pgdata)
+│  ├─ postgres.key            유지보수 관리자 비밀번호 (실행 서버에서 사용하지 않음)
+│  ├─ postgres-*.key          API·검색·조회 전용 DB 비밀번호
+│  ├─ search-service.key      내부 검색 서버 전용 인증 키
 │  ├─ backups/                SQLite 이행 전 백업
 │  ├─ assets/<id>/             원본 사진, 스티커, 메타데이터
 │  ├─ notebook-files/         다이어리 첨부 사진·GLB (소유자별 접근)
@@ -235,7 +240,7 @@ cd GoodMorNing
 
 ## PostgreSQL (Docker)
 
-DB는 이 PC의 Docker 컨테이너 `goodmorning-postgres`(이미지 `pgvector/pgvector:0.8.7-pg17`)에서 실행합니다. API 서버와 상품 검색 서버가 같은 DB를 사용하며, 포트는 `127.0.0.1:55432`로 PC 안에서만 열립니다. 자료는 Docker 볼륨 `goodmorning-pgdata`에, 생성된 비밀번호는 `data/postgres.key`에만 저장합니다. 사진·스티커·첨부·상품 이미지 파일은 지금처럼 `data/` 폴더에 두고 DB에는 경로를 저장합니다.
+DB는 이 PC의 Docker 컨테이너 `goodmorning-postgres`(이미지 `pgvector/pgvector:0.8.7-pg17`)에서 실행합니다. API·검색·조회는 각각 별도 최소 권한 계정과 `data/postgres-*.key`를 사용하며, 관리자 `data/postgres.key`는 유지보수에만 사용합니다. 포트는 `127.0.0.1:55432`로 PC 안에서만 열립니다. 자료는 Docker 볼륨 `goodmorning-pgdata`, 사진·스티커·첨부·상품 이미지는 `data/`에 저장합니다. 기존 설치는 서버를 멈춘 뒤 `python scripts/harden_database.py`로 백업·복원 검증과 권한/RLS 변경을 적용합니다. [보안 구성](docs/SECURITY.md)
 
 ```powershell
 .\scripts\setup-postgres.ps1                     # 처음 한 번: 컨테이너·표 생성 (setup.ps1에 포함)
@@ -249,9 +254,9 @@ DB는 이 PC의 Docker 컨테이너 `goodmorning-postgres`(이미지 `pgvector/p
 
 ### DB 조회 (/admin)
 
-앱에는 버튼이 없고 주소를 직접 입력해야 열립니다. PC에서는 `http://127.0.0.1:8787/admin`, Pages에서는 `https://niraaah.github.io/GoodMorNing/admin`입니다. Pages에서는 PC 서버 주소와 소유자 접근 키를 입력합니다. 키는 그 탭에만 보관합니다.
+앱에는 버튼이 없고 서버 PC에서 `http://127.0.0.1:8787/admin` 주소로 엽니다. Pages·공개 터널에서는 소유자 키가 있어도 DB 조회 API가 거부됩니다. 공개 관리자 페이지에는 로컬 주소 안내만 표시합니다.
 
-- 모든 방문자의 자료가 들어 있으므로 소유자 접근 키(또는 PC 안의 요청)만 조회할 수 있습니다. 방문자 연결은 403입니다.
+- 모든 방문자의 자료가 들어 있으므로 로컬 PC 소유자 요청만 조회할 수 있습니다. 방문자·외부 연결은 403입니다. 인증 ID·회원 프로필·세션·OAuth 시도 테이블은 조회 계정에 공개하지 않습니다.
 - 조회는 SELECT 권한만 있는 `goodmorning_reader` 계정으로, 읽기 전용 트랜잭션에서 한 문장씩, 5초·300행 제한으로 실행합니다. 바꾸는 문장, 여러 문장, 서버 파일 읽기는 막힙니다.
 - 표별 행 수, 에셋(미리보기·소유자·연결한 굿즈), 소유자별 개수, 스티커 작업, 다이어리 페이지, 굿즈 후보, 임베딩, 에셋-상품 연결, 표 구조를 바로 볼 수 있고, 결과는 CSV로 내려받을 수 있습니다.
 
@@ -302,8 +307,8 @@ DB는 이 PC의 Docker 컨테이너 `goodmorning-postgres`(이미지 `pgvector/p
 | `PUT /api/diaries/{id}` | 다이어리와 배치 저장 |
 | `GET /files/{id}/sticker.glb` | 입체 스티커 |
 | `GET /files/{id}/sticker.ply` | Gaussian PLY |
-| `GET /api/admin/summary` | 소유자 전용: 표별 행 수·PostgreSQL/pgvector 버전·DB 크기 |
-| `POST /api/admin/query` | 소유자 전용: `sql` 한 문장을 읽기 전용으로 실행 (300행·5초 제한) |
+| `GET /api/admin/summary` | 로컬 소유자 전용: 허용된 표의 행 수·PostgreSQL/pgvector 버전·DB 크기 |
+| `POST /api/admin/query` | 로컬 소유자 전용: `sql` 한 문장을 읽기 전용으로 실행 (300행·5초 제한) |
 
 `box`는 `[left, top, right, bottom]` JSON 문자열이며 각 좌표는 0~1입니다. 사진 크기는 최대 16MB, 2,400만 화소이고 처리용으로 축소됩니다. 생성은 GPU 작업 한 개씩 순차 처리합니다.
 

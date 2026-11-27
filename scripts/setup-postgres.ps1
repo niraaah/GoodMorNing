@@ -38,7 +38,7 @@ for ($i = 0; $i -lt 60 -and -not $ready; $i++) {
 }
 if (-not $ready) { throw 'PostgreSQL did not become ready.' }
 $env:GOODMORNING_DATABASE_PORT = "$Port"
-& $pythonPath -c 'from server.db import initialize; initialize()'
+& $pythonPath scripts/harden_database.py
 if ($LASTEXITCODE -ne 0) { throw 'Database tables could not be created.' }
 Write-Output "PostgreSQL ready: 127.0.0.1:$Port, container $name, volume goodmorning-pgdata."
 if (Test-Path -LiteralPath 'data\goodmorning.sqlite3') {

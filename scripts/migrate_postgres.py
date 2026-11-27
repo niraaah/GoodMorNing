@@ -19,7 +19,8 @@ import numpy as np
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-from server.db import Jsonb, connection, data_dir, initialize  # noqa: E402
+from server.db import Jsonb, admin_connection as connection, data_dir  # noqa: E402
+from server.db_security import initialize
 
 
 def iso(value):
@@ -161,5 +162,5 @@ def main():
 if __name__ == '__main__':
     try:
         main()
-    except RuntimeError as error:
-        raise SystemExit(f'Migration stopped: {error}')
+    except Exception as error:
+        raise SystemExit('Migration stopped ('+type(error).__name__+'). Inspect locally without printing credentials or row contents.')

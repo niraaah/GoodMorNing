@@ -13,7 +13,9 @@ import psycopg
 from fastapi import HTTPException, Request
 from pydantic import BaseModel, Field
 
-from .db import connection, reader_url
+from .db import reader_connection
+from .access import requires_access
+from psycopg.rows import dict_row
 
 ROW_LIMIT = 300
 
@@ -23,8 +25,9 @@ class Query(BaseModel):
 
 
 def owner_only(request: Request):
-    if request.state.owner != 'private':
-        raise HTTPException(403, 'DB 조회는 PC 소유자 접근 키로만 열 수 있어요.')
+    origin = request.headers.get('origin')
+    if request.state.owner != 'private' or requires_access(request) or (origin and origin != str(request.base_url).rstrip('/')):
+        raise HTTPException(403, 'DB 조회는 이 PC의 로컬 관리자 화면에서만 열 수 있어요.')
 
 
 def cell(value):
@@ -47,7 +50,9 @@ def register(app):
     @app.get('/api/admin/summary')
     def summary(request: Request):
         owner_only(request)
-        with connection() as con:
+        with reader_connection(row_factory=dict_row) as con:
+            con.execute('SET TRANSACTION READ ONLY')
+            con.execute("SET LOCAL statement_timeout='5s'")
             tables = con.execute("""SELECT table_name AS name FROM information_schema.tables
                 WHERE table_schema='public' AND table_type='BASE TABLE' ORDER BY table_name""").fetchall()
             for table in tables:
@@ -64,7 +69,7 @@ def register(app):
         if not source:
             raise HTTPException(422, 'SQL을 입력해 주세요.')
         try:
-            with psycopg.connect(reader_url(), connect_timeout=5) as con:
+            with reader_connection() as con:
                 con.execute('SET TRANSACTION READ ONLY')
                 con.execute("SET LOCAL statement_timeout = '5s'")
                 # A prepared statement accepts exactly one command.
