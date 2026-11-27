@@ -1,0 +1,22 @@
+.diary-paper-editor { min-width:0; margin:0 0 12px; padding:12px; border:1px solid #c9dfe9; border-radius:8px; background:#f5fafd; color:#294952; }
+.diary-paper-editor legend { font-size:14px; padding:0 5px; font-weight:600; }
+.paper-options { display:flex; flex-wrap:wrap; gap:6px; margin:6px 0; }
+.paper-choice { display:flex; align-items:center; gap:6px; min-height:44px; padding:6px 9px; border:1px solid #b8ced5; border-radius:8px; background:#fff; color:inherit; font:13px var(--ui-font); cursor:pointer; }
+.paper-choice[aria-pressed="true"] { border-color:#315e69; box-shadow:inset 0 0 0 1px #315e69; background:#e8f2f4; }
+.paper-choice:focus-visible { outline:2px solid #315e69; outline-offset:2px; }
+.paper-swatch { width:23px; height:28px; border:1px solid #b4b7b3; border-radius:3px; background-color:#fff9eb; flex:none; }
+.paper-swatch[data-pattern="original"] { background-image:repeating-linear-gradient(transparent 0 6px,#6f767738 6px 7px); }
+.paper-swatch[data-pattern="grid"] { background-image:linear-gradient(#6f767738 1px,transparent 1px),linear-gradient(90deg,#6f767738 1px,transparent 1px); background-size:6px 6px; }
+.paper-swatch[data-pattern="dots"] { background-image:radial-gradient(#6f767788 1px,transparent 1px); background-size:6px 6px; }
+.paper-footer { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; margin-top:8px; font-size:12px; }
+.paper-footer .button { min-height:44px; }
+.solid-diary .diary[data-paper-pattern="plain"],
+.solid-diary .diary[data-paper-pattern="grid"],
+.solid-diary .diary[data-paper-pattern="dots"] {
+  background-color:var(--user-paper,var(--paper,#fff9eb));
+  background-image:var(--paper-grain);
+  background-size:154px 154px;
+  background-position:0 0;
+}
+.solid-diary .diary[data-paper-pattern="grid"] { background-image:linear-gradient(#584c4120 1px,transparent 1px),linear-gradient(90deg,#584c4120 1px,transparent 1px),var(--paper-grain); background-size:6% 5.2%,6% 5.2%,154px 154px; }
+.solid-diary .diary[data-paper-pattern="dots"] { background-image:radial-gradient(#584c4155 1px,transparent 1px),var(--paper-grain); background-size:6% 5.2%,154px 154px; }
