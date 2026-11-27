@@ -88,6 +88,10 @@ class Registry:
         with self.lock:
             self.entries={k:v for k,v in self.entries.items() if v.session!=session}
 
+    def logout_owner(self,owner):
+        with self.lock:
+            self.entries.pop(owner,None);self.alerts.pop(owner,None);self.starts.pop(owner,None)
+
     def clear(self):
         with self.lock:
             self.entries.clear();self.alerts.clear();self.starts.clear()

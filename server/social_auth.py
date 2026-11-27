@@ -15,18 +15,18 @@ from uuid import uuid4
 import httpx
 from fastapi import HTTPException, Request
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
-from . import nearby
+from . import nearby, accounts, account_policy
 from .access import authorized, guest_owner, requires_access
 from .db import connection, data_dir
 from .diary_store import ensure_user
 
 PROVIDERS = {
-    'google': ('https://accounts.google.com/o/oauth2/v2/auth', 'https://oauth2.googleapis.com/token', 'https://openidconnect.googleapis.com/v1/userinfo', 'openid profile'),
-    'kakao': ('https://kauth.kakao.com/oauth/authorize', 'https://kauth.kakao.com/oauth/token', 'https://kapi.kakao.com/v2/user/me', 'profile_nickname'),
+    'google': ('https://accounts.google.com/o/oauth2/v2/auth', 'https://oauth2.googleapis.com/token', 'https://openidconnect.googleapis.com/v1/userinfo', 'openid'),
+    'kakao': ('https://kauth.kakao.com/oauth/authorize', 'https://kauth.kakao.com/oauth/token', 'https://kapi.kakao.com/v2/user/me', ''),
 }
-PUBLIC_PATHS = {'/auth/providers'} | {f'/auth/{p}/{action}' for p in PROVIDERS for action in ('start', 'complete')}
+PUBLIC_PATHS = {'/auth/providers','/auth/legal'} | {f'/auth/{p}/{action}' for p in PROVIDERS for action in ('start', 'complete')}
 
 
 def digest(value):
@@ -56,15 +56,16 @@ def configured(config):
 
 
 def guest_available(con, owner):
-    return not con.execute('SELECT 1 FROM account_profiles WHERE owner=%s', (owner,)).fetchone()
+    return not con.execute('SELECT 1 FROM account_profiles WHERE owner=%s', (owner,)).fetchone() and not con.execute('SELECT 1 FROM retired_guest_owners WHERE owner_hash=%s AND expires_at>now()',(digest(owner),)).fetchone()
 
 
 def member_session(con, token):
     if not re.fullmatch(r'member\.[A-Za-z0-9_-]{43}', token):
         return None
-    row = con.execute('''SELECT p.user_id,p.owner,p.display_name,s.token_hash FROM account_sessions s
+    row = con.execute('''SELECT p.user_id,p.owner,p.display_name,p.profile_ready,p.terms_version,p.privacy_version,(p.avatar IS NOT NULL) AS has_avatar,s.token_hash FROM account_sessions s
         JOIN account_profiles p ON p.user_id=s.user_id WHERE s.token_hash=%s AND s.revoked_at IS NULL
-        AND s.expires_at>now() AND s.last_seen>now()-interval '24 hours' ''', (digest(token),)).fetchone()
+        AND NOT p.deleting AND s.expires_at>now() AND s.last_seen>now()-interval '24 hours' ''', (digest(token),)).fetchone()
+    if row and (accounts.ledger_root()/(str(row['user_id'])+'.json')).exists():return None
     if row:
         con.execute("UPDATE account_sessions SET last_seen=now() WHERE token_hash=%s AND last_seen<now()-interval '5 minutes'", (row['token_hash'],))
     return row
@@ -104,6 +105,8 @@ def complete_identity(con, provider, subject, name, candidate):
     promoted = False
     if existing:
         user = existing['user_id']
+        if con.execute('SELECT 1 FROM account_profiles WHERE user_id=%s AND deleting',(user,)).fetchone() or (accounts.ledger_root()/(str(user)+'.json')).exists():
+            raise HTTPException(409,'탈퇴 자료를 정리 중이에요. 잠시 후 다시 시도해 주세요.')
     else:
         if candidate and candidate.startswith('guest-'):
             user = ensure_user(con, candidate)
@@ -113,14 +116,18 @@ def complete_identity(con, provider, subject, name, candidate):
             candidate = 'member-' + uuid4().hex
             user = ensure_user(con, candidate)
         con.execute("UPDATE app_users SET kind='member' WHERE id=%s", (user,))
-        con.execute('INSERT INTO account_profiles(user_id,owner,display_name) VALUES(%s,%s,%s)', (user, candidate, name))
+        con.execute('INSERT INTO account_profiles(user_id,owner,display_name) VALUES(%s,%s,%s)', (user, candidate, '새 수집가'))
         con.execute('INSERT INTO auth_identities(provider,subject,user_id) VALUES(%s,%s,%s)', (provider, subject, user))
-    con.execute('UPDATE account_profiles SET display_name=%s WHERE user_id=%s', (name, user))
     return issue_session(con, user), promoted
 
 
 class Begin(BaseModel):
+    model_config=ConfigDict(extra='forbid',strict=True)
     keep_guest: bool = False
+    terms:bool=False
+    privacy:bool=False
+    age14:bool=False
+    policy_version:str=''
 
 
 class Finish(BaseModel):
@@ -142,11 +149,16 @@ def register(app):
     def me(request: Request):
         member = request.state.member
         if member:
-            return response({'kind': 'member', 'name': member['display_name']})
+
+            with connection() as con:
+                provider=con.execute('SELECT provider FROM auth_identities WHERE user_id=%s LIMIT 1',(member['user_id'],)).fetchone()['provider']
+            return response({'kind':'member','name':member['display_name'],'profile_ready':member['profile_ready'] and member['terms_version']==account_policy.VERSION and member['privacy_version']==account_policy.VERSION,
+                'has_avatar':member['has_avatar'],'provider':provider,'profile_created':member['profile_ready']})
         return response({'kind': 'local' if request.state.owner == 'private' else 'guest'})
 
     @app.post('/auth/{provider}/start')
     def start(provider: str, body: Begin, request: Request):
+        account_policy.accepted(body)
         config = settings(provider)
         if not configured(config):
             raise HTTPException(503, '소셜 로그인 연결을 준비 중이에요. 잠시 후 다시 이용해 주세요.')
@@ -164,11 +176,13 @@ def register(app):
             con.execute('DELETE FROM oauth_attempts WHERE expires_at<now()')
             if con.execute('SELECT count(*) AS n FROM oauth_attempts WHERE client_hash=%s', (client_hash,)).fetchone()['n'] >= 30:
                 raise HTTPException(429, '로그인 요청이 많아요. 10분 뒤 다시 시도해 주세요.')
-            con.execute('''INSERT INTO oauth_attempts(state_hash,verifier_hash,client_hash,config_hash,origin,guest_owner,expires_at)
-                VALUES(%s,%s,%s,%s,%s,%s,now()+interval '10 minutes')''',
-                (digest(state), digest(verifier), client_hash, digest(json.dumps(config,sort_keys=True)), origin, candidate))
+            con.execute('''INSERT INTO oauth_attempts(state_hash,verifier_hash,client_hash,config_hash,origin,guest_owner,expires_at,policy_version)
+                VALUES(%s,%s,%s,%s,%s,%s,now()+interval '10 minutes',%s)''',
+                (digest(state), digest(verifier), client_hash, digest(json.dumps(config,sort_keys=True)), origin, candidate, account_policy.VERSION))
         query = urlencode({'response_type': 'code', 'client_id': config['client_id'],
                            'redirect_uri': config['callback_url'], 'state': state, 'scope': PROVIDERS[provider][3]})
+        if not PROVIDERS[provider][3]:
+            query=urlencode({'response_type':'code','client_id':config['client_id'],'redirect_uri':config['callback_url'],'state':state})
         return response({'authorize_url': PROVIDERS[provider][0]+'?'+query, 'state': state, 'verifier': verifier})
 
     @app.post('/auth/{provider}/complete')
@@ -179,9 +193,9 @@ def register(app):
         with connection() as con:
             attempt = con.execute('''UPDATE oauth_attempts SET consumed_at=now() WHERE state_hash=%s
                 AND verifier_hash=%s AND origin=%s AND config_hash=%s AND consumed_at IS NULL AND expires_at>now()
-                RETURNING guest_owner''', (digest(body.state), digest(body.verifier), request.headers.get('origin',''),
+                RETURNING guest_owner,policy_version''', (digest(body.state), digest(body.verifier), request.headers.get('origin',''),
                 digest(json.dumps(config,sort_keys=True)))).fetchone()
-        if not attempt:
+        if not attempt or attempt['policy_version']!=account_policy.VERSION:
             raise HTTPException(400, '로그인 요청이 만료되었어요. 앱에서 다시 시작해 주세요.')
         try:
             with httpx.Client(timeout=15, trust_env=False, follow_redirects=False) as client:
@@ -200,13 +214,12 @@ def register(app):
                 if not isinstance(subject, (str, int)) or isinstance(subject, bool) or not 1 <= len(str(subject)) <= 200:
                     raise ValueError()
                 subject = str(subject)
-                nickname = data.get('name') if provider == 'google' else data.get('kakao_account', {}).get('profile', {}).get('nickname')
-                nickname = nickname or '굿모닝 회원'
-                name = ''.join(c for c in str(nickname) if c.isprintable())[:60] or '굿모닝 회원'
+                name='새 수집가'  # Do not import social names, email or profile photos.
         except (httpx.HTTPError, ValueError, TypeError, AttributeError):
             raise HTTPException(502, '소셜 로그인을 확인하지 못했어요. 앱에서 다시 시도해 주세요.')
         with connection() as con:
             session, promoted = complete_identity(con, provider, subject, name, attempt['guest_owner'])
+        accounts.remember_provider(digest(session),provider,token)
         return response({'token': session, 'guest_promoted': promoted})
 
     @app.post('/auth/logout')
@@ -215,4 +228,5 @@ def register(app):
             with connection() as con:
                 con.execute('UPDATE account_sessions SET revoked_at=now() WHERE token_hash=%s', (request.state.member['token_hash'],))
             nearby.registry.logout(request.state.member['token_hash'])
+            accounts.discard_provider(request.state.member['token_hash'])
         return response({'ok': True})
