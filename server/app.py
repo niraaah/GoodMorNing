@@ -1,3 +1,5 @@
+import asyncio
+from contextlib import suppress
 import hmac
 import json
 import logging
@@ -22,7 +24,7 @@ from PIL import Image
 from .gpu import Segmenter
 from .depth import DepthEstimator
 from .stickers import generate, normalized_image
-from . import notebook, asset_trash, admin, social_auth
+from . import notebook, asset_trash, admin, social_auth, nearby
 from .db import Jsonb, connection, owner_scope, current_owner
 from .goods import api as goods_api
 from .goods import catalog
@@ -134,7 +136,14 @@ async def lifespan(app):
         initialize()
     thread = threading.Thread(target=worker, daemon=True, name='sticker-worker')
     thread.start()
-    yield
+    cleanup=asyncio.create_task(nearby.cleanup_loop())
+    try:
+        yield
+    finally:
+        cleanup.cancel()
+        with suppress(asyncio.CancelledError):
+            await cleanup
+        nearby.registry.clear()
     try:
         tasks.put_nowait(None)
     except queue.Full:
@@ -142,6 +151,7 @@ async def lifespan(app):
 
 
 app = FastAPI(title='굿모닝 · local studio', lifespan=lifespan)
+nearby.attach(app)
 ALLOWED_ORIGINS = [origin.strip() for origin in os.getenv('GOODMORNING_FRONTEND_ORIGINS', 'https://niraaah.github.io').split(',') if origin.strip()]
 
 
@@ -160,6 +170,8 @@ async def same_origin(request: Request, call_next):
         return RedirectResponse('/connect',status_code=303)
     with owner_scope(request.state.owner):
         response=await call_next(request)
+    if request.url.path.startswith('/api/nearby/'):
+        response.headers['Cache-Control']='no-store'
     response.headers['Referrer-Policy']='no-referrer'
     response.headers['X-Content-Type-Options']='nosniff'
     response.headers['X-Frame-Options']='SAMEORIGIN'

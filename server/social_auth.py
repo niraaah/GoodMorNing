@@ -17,6 +17,7 @@ from fastapi import HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
+from . import nearby
 from .access import authorized, guest_owner, requires_access
 from .db import connection, data_dir
 from .diary_store import ensure_user
@@ -213,4 +214,5 @@ def register(app):
         if request.state.member:
             with connection() as con:
                 con.execute('UPDATE account_sessions SET revoked_at=now() WHERE token_hash=%s', (request.state.member['token_hash'],))
+            nearby.registry.logout(request.state.member['token_hash'])
         return response({'ok': True})
