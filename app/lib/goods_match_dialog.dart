@@ -239,7 +239,7 @@ class _GoodsMatchDialogState extends State<GoodsMatchDialog> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              '상품을 연결하면 에셋과 다이어리에서 다시 찾아볼 수 있어요.',
+              'AI가 추천한 상품을 고르면 정보와 링크가 연결돼요. 상품 링크를 직접 입력할 필요는 없어요.',
               style: TextStyle(fontSize: 12, height: 1.6),
             ),
             const SizedBox(height: 12),
@@ -317,7 +317,7 @@ class _GoodsMatchDialogState extends State<GoodsMatchDialog> {
             ),
             ExpansionTile(
               title: const Text(
-                '맞는 후보가 없어요 · 상품 링크 직접 연결',
+                '선택 사항 · 알고 있는 상품 링크 직접 연결',
                 style: TextStyle(fontSize: 12),
               ),
               tilePadding: EdgeInsets.zero,
@@ -325,7 +325,9 @@ class _GoodsMatchDialogState extends State<GoodsMatchDialog> {
                 TextField(
                   controller: manualTitle,
                   maxLength: 300,
-                  decoration: const InputDecoration(labelText: '상품명 (선택)'),
+                  decoration: const InputDecoration(
+                    labelText: '직접 연결할 상품명 (선택)',
+                  ),
                 ),
                 TextField(
                   controller: manualUrl,

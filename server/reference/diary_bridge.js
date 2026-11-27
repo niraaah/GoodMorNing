@@ -12,7 +12,8 @@
   function syncNearby() {
     for(const button of [nearbyButton,nearbyPeekButton]) {
       if(!button) continue;
-      button.textContent=nearbyActive?'📍 ON':'📍';
+      button.innerHTML='<span class="gm-material" data-icon="map" aria-hidden="true"></span><span class="gm-active-dot" aria-hidden="true"></span>';
+      button.classList.toggle('is-active',nearbyActive);
       button.title=nearbyActive?'위치 공유 중 · 끄기/설정':'근처 수집가 알림';
       button.setAttribute('aria-label',button.title);
       button.setAttribute('aria-pressed',String(nearbyActive));
@@ -31,8 +32,8 @@
       send('account');
     };
     nearbyButton=document.createElement('button');
-    nearbyButton.type='button';
-    nearbyButton.style.cssText='flex-shrink:0;border:0;background:transparent;color:#294653;padding:10px 4px;min-width:32px;min-height:40px;font:inherit;font-size:12px;cursor:pointer';
+    nearbyButton.type='button'; nearbyButton.className='gm-icon-button gm-nearby-button';
+    nearbyButton.style.cssText='flex-shrink:0;border:0;background:transparent;color:#294653;padding:10px 4px;min-width:44px;min-height:44px;font:inherit;font-size:12px;cursor:pointer';
     nearbyButton.onclick=()=>send('nearby');
     nearbyPeekButton=nearbyButton.cloneNode(false);
     nearbyPeekButton.id='gm-nearby-peek';
