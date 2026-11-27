@@ -324,3 +324,7 @@ DB는 이 PC의 Docker 컨테이너 `goodmorning-postgres`(이미지 `pgvector/p
 cd app
 ..\tools\flutter\bin\flutter.bat test
 ```
+
+## 소셜 로그인 설정
+
+구글·카카오 로그인만 지원합니다. 키를 넣을 로컬 파일과 개발자 콘솔 등록 주소는 [설정 안내](docs/social-login.md)를 확인하세요. 실제 키는 `data/auth.local.json`에만 넣으며 Git에는 포함하지 않습니다. 키 등록 전에는 로그인 버튼이 준비 중으로 표시됩니다.

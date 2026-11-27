@@ -8,6 +8,21 @@
   connection.catch(() => {});
   const binaryRefs = new WeakMap(), files = new Map(), added = new Set();
   const send = (type, data={}) => parent.postMessage({source:'goodmorning-reference',type,...data}, location.origin);
+  let accountLabel='로그인', accountButton;
+  document.addEventListener('DOMContentLoaded', () => {
+    const topbar=document.querySelector('.topbar');
+    if(!topbar) return;
+    accountButton=document.createElement('button');
+    accountButton.type='button';accountButton.textContent=accountLabel;
+    accountButton.style.cssText='flex-shrink:0;border:0;background:transparent;color:#294653;padding:10px 8px;font:inherit;font-size:13px;cursor:pointer';
+    accountButton.onclick=()=>{
+      if(typeof draft!=='undefined' && draft) {
+        send('error',{message:'편집 중인 다이어리를 저장하거나 취소한 뒤 로그인해 주세요.'});return;
+      }
+      send('account');
+    };
+    topbar.append(accountButton);
+  });
   document.addEventListener('click', event => {
     const link=event.target.closest('a');
     const revision=new URLSearchParams(location.search).get('_build');
@@ -21,6 +36,8 @@
     if(event.source!==parent || event.origin!==location.origin || event.data?.source!=='goodmorning-app') return;
     const next=event.data;
     if(next.type!=='connection') return;
+    accountLabel=next.accountLabel||'로그인';
+    if(accountButton) accountButton.textContent=accountLabel;
     pendingAsset=next.pendingAsset || null;
     if(next.error) { rejectConnection(new Error('GPU 서버에 연결하지 못했어요. 연결 후 다이어리를 다시 열어 주세요.')); return; }
     if(!next.ready) return;

@@ -44,7 +44,12 @@ def known_secrets():
         for name in ('COUPANG_ACCESS_KEY','COUPANG_SECRET_KEY','NAVER_CLIENT_ID','NAVER_CLIENT_SECRET','HF_TOKEN'):
             add(body.get(name))
     for name,value in os.environ.items():
-        if re.search(r'(?:API_KEY|ACCESS_KEY|SECRET_KEY|SECRET|TOKEN)$',name): add(value)
+        if re.search(r'(?:API_KEY|ACCESS_KEY|SECRET_KEY|SECRET|TOKEN|CLIENT_ID)$',name): add(value)
+    auth=ROOT/'data/auth.local.json'
+    if auth.exists():
+        body=json.loads(auth.read_text(encoding='utf-8-sig'))
+        for name in ('GOOGLE_CLIENT_ID','GOOGLE_CLIENT_SECRET','KAKAO_CLIENT_ID','KAKAO_CLIENT_SECRET'):
+            add(body.get(name))
     for filename in ('access-link.txt','pages-link.txt'):
         path=ROOT/'logs'/filename
         if not path.exists(): continue

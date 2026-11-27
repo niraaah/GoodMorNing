@@ -44,11 +44,15 @@ class Api {
     final config = jsonDecode(configResponse.body) as Map<String, dynamic>;
     final address = config['apiBase'] as String? ?? '';
     if (address.isEmpty) throw Exception('GPU 서버 주소가 아직 배포되지 않았어요.');
-    final previousToken = token.isNotEmpty
-        ? token
-        : web.window.localStorage.getItem('goodmorning-visitor-token') ?? '';
-    configure(address, previousToken);
-    if (token.isNotEmpty) {
+    final visitorToken =
+        web.window.localStorage.getItem('goodmorning-visitor-token') ?? '';
+    // Restore an unclaimed visitor collection after an expired member session.
+    // Do not overwrite that collection's capability with a new guest token.
+    for (final candidate in {
+      token,
+      visitorToken,
+    }.where((value) => value.isNotEmpty)) {
+      configure(address, candidate);
       final response = await http
           .get(uri('/api/health'), headers: headers)
           .timeout(const Duration(seconds: 20));
@@ -59,6 +63,7 @@ class Api {
       if (![401, 403].contains(response.statusCode))
         throw Exception('PC의 GPU 서버가 응답하지 않아요. 잠시 후 다시 시도해 주세요.');
     }
+    configure(address, '');
     final response = await http
         .post(uri('/auth/guest'))
         .timeout(const Duration(seconds: 20));
@@ -92,6 +97,37 @@ class Api {
   static void useManualConnection(String server, String key) {
     configure(server, key);
     _explicitConnection = true;
+  }
+
+  static Future<void> socialLogin(String provider, bool keepGuest) async {
+    if (!['google', 'kakao'].contains(provider))
+      throw Exception('지원하지 않는 로그인 방식이에요.');
+    final providers = await get('/auth/providers');
+    final callback = Uri.parse(providers[provider]['callback_url'] as String);
+    if (callback.origin != Uri.base.origin)
+      throw Exception('공개 웹 주소에서 로그인을 이용해 주세요.');
+    final result = await post('/auth/$provider/start', {
+      'keep_guest': keepGuest,
+    });
+    web.window.sessionStorage.setItem(
+      'goodmorning-oauth',
+      jsonEncode({
+        'provider': provider,
+        'state': result['state'],
+        'verifier': result['verifier'],
+        'server': uri('/').origin,
+        'guestToken': token.startsWith('guest.') ? token : '',
+        'expires': DateTime.now().millisecondsSinceEpoch + 600000,
+      }),
+    );
+    web.window.location.assign(result['authorize_url'] as String);
+  }
+
+  static Future<void> logout() async {
+    await post('/auth/logout');
+    web.window.sessionStorage.removeItem('goodmorning-token');
+    web.window.sessionStorage.removeItem('goodmorning-oauth');
+    web.window.location.reload();
   }
 
   static Uri staticUri(String path) {
