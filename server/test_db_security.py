@@ -156,3 +156,22 @@ def test_admin_api_is_local_only_even_for_owner():
         with pytest.raises(HTTPException) as error:
             owner_only(request(headers))
         assert error.value.status_code==403
+
+
+def test_legacy_migration_keeps_security_marker_and_binds_implicit_ownership(secured):
+    import sqlite3
+    from scripts.migrate_postgres import copy, seconds
+    admin, _ = secured
+    with sqlite3.connect(':memory:') as legacy:
+        legacy.execute('CREATE TABLE schema_migrations(version text PRIMARY KEY,applied_at real)')
+        legacy.execute('INSERT INTO schema_migrations VALUES(?,?)', ('old-catalog',1))
+        legacy.execute('INSERT INTO schema_migrations VALUES(?,?)', (db.SECURITY_VERSION,1))
+        assert copy(legacy,admin,'schema_migrations',{'applied_at':seconds})==2
+    versions={r['version'] for r in admin.execute('SELECT version FROM schema_migrations')}
+    assert {'old-catalog',db.SECURITY_VERSION} <= versions
+    admin.execute("INSERT INTO assets VALUES('legacy','old','photo','photo',now(),'{}')")
+    # Provision is idempotent and can run after legacy imports without replacing rows.
+    passwords={s:secrets.token_urlsafe(32) for s in db.ROLES}
+    db_security.provision(admin,passwords)
+    row=admin.execute("SELECT owner FROM ownership WHERE kind='asset' AND ident='legacy'").fetchone()
+    assert row['owner']=='private'

@@ -20,7 +20,7 @@ import numpy as np
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 from server.db import Jsonb, admin_connection as connection, data_dir  # noqa: E402
-from server.db_security import initialize
+from server.db_security import initialize, provision, credentials
 
 
 def iso(value):
@@ -112,7 +112,8 @@ def copy(source_con, target, table, convert):
         for row in cursor:
             record = dict(zip([d[0] for d in cursor.description], row))
             values = [None if record[c] is None else convert.get(c, lambda v: v)(record[c]) for c in columns]
-            out.execute(f'INSERT INTO "{table}" ({names}) VALUES ({marks})', values)
+            conflict = ' ON CONFLICT(version) DO NOTHING' if table == 'schema_migrations' else ''
+            out.execute(f'INSERT INTO "{table}" ({names}) VALUES ({marks})'+conflict, values)
             count += 1
     return count
 
@@ -126,7 +127,7 @@ def main():
         raise SystemExit('SQLite database not found; nothing to migrate.')
     initialize()
     with connection() as target:
-        filled = [t for t, _ in TABLES if target.execute(f'SELECT EXISTS (SELECT 1 FROM "{t}") AS x').fetchone()['x']]
+        filled = [t for t, _ in TABLES if t != 'schema_migrations' and target.execute(f'SELECT EXISTS (SELECT 1 FROM "{t}") AS x').fetchone()['x']]
     if filled:
         raise RuntimeError('PostgreSQL already has data in: ' + ', '.join(filled)
                            + '. Migrate into a new database (remove the goodmorning-pgdata volume) or skip.')
@@ -140,16 +141,20 @@ def main():
                 if table not in tables:
                     report[table] = 'absent in SQLite'
                     continue
+                prior_versions = {r['version'] for r in target.execute('SELECT version FROM schema_migrations')} if table == 'schema_migrations' else set()
                 copied = copy(source, target, table, convert)
                 expected = source.execute(f'SELECT count(*) FROM "{table}"').fetchone()[0]
                 stored = target.execute(f'SELECT count(*) AS n FROM "{table}"').fetchone()['n']
-                if not copied == expected == stored:
+                expected_stored = len(prior_versions | {r[0] for r in source.execute('SELECT version FROM schema_migrations')}) if table == 'schema_migrations' else expected
+                if copied != expected or stored != expected_stored:
                     raise RuntimeError(f'Row count mismatch in {table}.')
                 report[table] = stored
             for table in IDENTITY:
                 target.execute(f"SELECT setval(pg_get_serial_sequence('{table}','id'), coalesce(max(id), 0) + 1, false) FROM \"{table}\"")
             if target.execute('SELECT count(*) AS n FROM catalog_embeddings WHERE vector_dims(vector) <> dimensions').fetchone()['n']:
                 raise RuntimeError('Embedding dimensions do not match.')
+            # Imported legacy rows can have implicit local ownership; make it explicit for RLS.
+            provision(target, credentials())
             if not args.apply:
                 target.rollback()
     finally:
