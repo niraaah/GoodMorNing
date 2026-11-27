@@ -7,15 +7,13 @@ import time
 import uuid
 import httpx
 from fastapi import Request, UploadFile, File, Form, HTTPException
-from ..db import Jsonb
+from ..db import Jsonb, owner_scope
 from .config import DATA, GUIDANCE, product_url
 
 DAY = "now() - interval '1 day'"
 
 def initialize(con):
-    # goods_searches is created from server/schema.sql.
-    con.execute("UPDATE goods_searches SET state='failed',body=%s WHERE state='running'",(Jsonb({'message':'서버가 재시작됐어요. 다시 검색해 주세요.'}),))
-    con.execute(f'DELETE FROM goods_searches WHERE created<{DAY}')
+    pass  # Fixed startup recovery runs through gm_recover_jobs(), not broad SQL rights.
 
 def selection(con,owner,search_id,candidate_id,manual_url,manual_title):
     if manual_url:
@@ -34,9 +32,9 @@ def selection(con,owner,search_id,candidate_id,manual_url,manual_title):
 
 def register(app,connection,uploaded_image):
     gate=threading.BoundedSemaphore(2)
-    def run(ident,photo,query):
+    def run(ident,photo,query,owner):
         try:
-            key=(DATA/'access.key').read_text(encoding='utf-8').strip()
+            key=(DATA/'search-service.key').read_text(encoding='utf-8').strip()
             response=httpx.post('http://127.0.0.1:8788/search',headers={'Authorization':'Bearer '+key},
                 json={'photo':photo,'query':query},timeout=300,trust_env=False)
             if response.status_code!=200:
@@ -47,7 +45,8 @@ def register(app,connection,uploaded_image):
             body={'message':'상품 검색 서버에 연결하지 못했어요. 잠시 후 다시 시도하거나 링크를 직접 연결해 주세요.'};state='failed'
         finally:gate.release()
         body['guidance']=GUIDANCE
-        with connection() as con:con.execute('UPDATE goods_searches SET state=%s,body=%s WHERE id=%s',(state,Jsonb(body),ident))
+        with owner_scope(owner), connection() as con:
+            con.execute('UPDATE goods_searches SET state=%s,body=%s WHERE id=%s',(state,Jsonb(body),ident))
 
     @app.post('/api/goods/searches',status_code=202)
     async def begin(request:Request,photo:UploadFile=File(),query:str=Form(min_length=1,max_length=80),box:str=Form('[0,0,1,1]')):
@@ -67,7 +66,7 @@ def register(app,connection,uploaded_image):
                 if active:raise HTTPException(429,'이전에 올린 사진을 검색 중이에요. 결과를 기다려 주세요.')
                 con.execute(f'DELETE FROM goods_searches WHERE created<{DAY}')
                 con.execute('INSERT INTO goods_searches VALUES(%s,%s,%s,%s,now())',(ident,request.state.owner,'running',Jsonb({})))
-            threading.Thread(target=run,args=(ident,base64.b64encode(output.getvalue()).decode(),query.strip()),daemon=True).start()
+            threading.Thread(target=run,args=(ident,base64.b64encode(output.getvalue()).decode(),query.strip(),request.state.owner),daemon=True).start()
         except Exception:gate.release();raise
         return {'id':ident,'state':'running'}
 

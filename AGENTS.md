@@ -1,5 +1,10 @@
 # Sensitive-data handling
 
+## Implementation record
+
+- Keep `docs/WORK_LOG.md` updated for meaningful implementation, correction and security changes. Record the problem, final change, validation, local application/deployment status, and remaining work with commit/PR evidence where available.
+- Separate implemented code from verified runtime behavior and user acceptance. Do not include secrets, private URLs, personal photos or DB row contents. Keep `TODO.md` local and untracked.
+
 ## Branch workflow
 
 - Keep `main` as the deployable branch and `niraaah` as the user's persistent development branch. Make changes on `niraaah`, not directly on `main`; do not create topic branches unless the user asks.

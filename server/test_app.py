@@ -20,7 +20,7 @@ def admin_url():
         return os.environ['GOODMORNING_TEST_DATABASE_URL']
     from server import db
     try:
-        return db.url()
+        return db.admin_url()
     except RuntimeError:
         return ''
 
@@ -38,17 +38,31 @@ def client(tmp_path, monkeypatch):
     url = make_conninfo(**{**conninfo_to_dict(ADMIN_URL), 'dbname': name})
     monkeypatch.setenv('GOODMORNING_DATA',str(tmp_path))
     monkeypatch.setenv('GOODMORNING_DATABASE_URL', url)
+    # This legacy integration suite also uses real restricted roles, never runtime superuser fallback.
+    from server import db_security
+    from psycopg.rows import dict_row
+    role_names = {s:'gm_test_'+uuid.uuid4().hex[:12]+'_'+s for s in ('api','search','reader')}
+    monkeypatch.setattr(db_security.db, 'ROLES', role_names)
+    monkeypatch.setattr(db_security.db, 'READER', role_names['reader'])
+    passwords = db_security.credentials()
+    with psycopg.connect(url, row_factory=dict_row) as schema:
+        db_security.provision(schema, passwords)
+    for service, role in db_security.db.ROLES.items():
+        monkeypatch.setenv('GOODMORNING_'+service.upper()+'_DATABASE_URL',
+            make_conninfo(**{**conninfo_to_dict(url),'user':role,'password':passwords[service]}))
     from server import db
     from server import app as module
     db.close()
     module = importlib.reload(module)
     try:
-        with TestClient(module.app) as client:
+        with db.owner_scope('private'), TestClient(module.app) as client:
             yield client, tmp_path, url
     finally:
         db.close()
         with psycopg.connect(ADMIN_URL, autocommit=True) as admin:
             admin.execute(f'DROP DATABASE {name} WITH (FORCE)')
+            for role in role_names.values():
+                admin.execute(psycopg.sql.SQL('DROP ROLE {}').format(psycopg.sql.Identifier(role)))
 
 
 def photo():

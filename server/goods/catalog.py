@@ -20,9 +20,6 @@ def utc_now():
 def initialize():
     DATA.mkdir(parents=True, exist_ok=True)
     initialize_database()
-    with connection() as con:
-        for version in (VERSION, POSTGRES_VERSION):
-            con.execute('INSERT INTO schema_migrations VALUES(%s,%s) ON CONFLICT DO NOTHING', (version, utc_now()))
 
 
 def normalized(value):

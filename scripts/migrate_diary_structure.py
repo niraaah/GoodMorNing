@@ -18,7 +18,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 from psycopg import sql
 from psycopg.conninfo import conninfo_to_dict
-from server.db import connection, data_dir, url
+from server.db import admin_connection as connection, data_dir, admin_url as url
 from server.diary_store import backfill, document, fingerprint, placements
 
 NEW_TABLES = {'app_users', 'app_owner_bindings', 'auth_identities', 'user_notebooks', 'diary_pages', 'diary_page_items'}
