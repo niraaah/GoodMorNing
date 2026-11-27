@@ -2,8 +2,8 @@
 
 ## Branch workflow
 
-- Keep `main` as the deployable branch. Start changes from updated `origin/main` on `feature/<topic>`, `fix/<topic>` or `chore/<topic>`; do not commit changes directly on `main`.
-- Push the working branch and open a pull request to `main`. Run the applicable build and secret checks before merging; use the PR checks and retain a clear description of changes and validation.
+- Keep `main` as the deployable branch and `niraaah` as the user's persistent development branch. Make changes on `niraaah`, not directly on `main`; do not create topic branches unless the user asks.
+- Before a new task, fetch and merge the latest `origin/main` into `niraaah`, preserving any ongoing work. Push `niraaah` and open a pull request to `main`. Run the applicable build and secret checks before merging; retain a clear description of changes and validation. Keep `niraaah` after merging, and synchronize it with main before the next task.
 - Local runtime installs, credentials, database backups and `TODO.md` stay outside Git. A code merge does not mean a local database migration or model installation has run.
 
 ## Credentials
