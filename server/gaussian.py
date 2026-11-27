@@ -1,8 +1,9 @@
-"""Single-view Gaussian relief, not multi-view 3D reconstruction.
+"""Smooth an existing relief map and export auxiliary Gaussian files.
 
-Each visible texel becomes an anisotropic Gaussian on the rounded sticker surface.
-The standard PLY and .splat exports preserve that representation. The GLB is a
-mesh bake of the same Gaussian surface for stable clearcoat lighting in diaries.
+This module does not infer geometry from a photo or train Gaussian Splatting.
+The caller has already built the height field from YOLO depth (or an explicitly
+reported silhouette fallback). We filter color/height, export PLY/SPLAT, and the
+caller writes the GLB mesh used by the diary from the same processed maps.
 """
 from pathlib import Path
 import numpy as np
@@ -10,7 +11,7 @@ from scipy.ndimage import gaussian_filter
 
 
 def build_gaussian_sticker(maps, output: Path):
-    # Gaussian reconstruction of the texture and height, weighted by the cutout.
+    # Smooth the existing texture and height, weighted by the cutout; no depth inference.
     cut = maps['alpha'].astype(np.float64)
     mass = gaussian_filter(cut, .7)
     for key in ('color', 'height'):

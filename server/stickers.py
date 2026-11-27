@@ -30,9 +30,11 @@ def normalized_image(raw: bytes):
 
 
 def generate(image_path, output, segmenter, options, progress, estimator=None):
-    """SAM 2 cutout -> YOLO depth of the cutout -> Gaussian relief -> glossy sticker.
+    """SAM 2 cutout -> YOLO image depth -> depth-based relief mesh -> glossy GLB.
 
     Each stage writes an image to process/ as it ends (see server/process.py).
+    Depth is inferred by YOLO, not by Gaussian Splatting. The Gaussian helper
+    only smooths the already-built maps and exports auxiliary PLY/SPLAT files.
     Without the depth model the relief falls back to the silhouette distance.
     """
     output = Path(output)
@@ -111,7 +113,7 @@ def generate(image_path, output, segmenter, options, progress, estimator=None):
     record.sticker(maps)
     record.compose()
     lap('sticker')
-    info = {'pipeline_version': 'sam2-opaque-mask-v2', 'engine': 'sam2-gaussian', 'reconstruction': 'single-photo-gaussian-relief', 'segmentation': segmentation,
+    info = {'pipeline_version': 'sam2-opaque-mask-v2', 'engine': 'sam2-gaussian', 'reconstruction': 'yolo-depth-relief' if depth_source.startswith('yolo26n-depth-') else 'silhouette-relief', 'segmentation': segmentation,
             'depth': depth_source, 'process': {'image': 'process.jpg', 'stages': record.stages, 'seconds': seconds},
             'gaussians': gaussian_info,
             'vertices': len(mesh['pos']), 'triangles': len(mesh['idx']) // 3, 'max_height_mm': mesh['max_height_mm'],

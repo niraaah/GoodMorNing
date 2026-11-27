@@ -1474,7 +1474,7 @@ class _StickerDialogState extends State<StickerDialog> {
             ],
             const SizedBox(height: 12),
             const Text(
-              'SAM 2 누끼 → 가우시안 볼록 스티커\n사진과 결과는 내 PC에 저장돼요.',
+              'SAM 2 누끼 → YOLO 깊이 추정 → 볼록 스티커\n사진과 결과는 내 PC에 저장돼요.',
               style: TextStyle(fontSize: 11, color: blue, height: 1.8),
             ),
           ],

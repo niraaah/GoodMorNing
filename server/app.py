@@ -230,7 +230,8 @@ def health():
     gpu = segmenter.status()
     return {'status': 'ok', 'storage': 'local', 'gpu': gpu, 'engine': 'sam2-gaussian',
             'photo_ready': gpu['model_ready'], 'depth_ready': depth_estimator.ready(), 'queue_size': tasks.qsize(),
-            'pipeline': 'SAM 2.1 → YOLO26n depth → single-photo Gaussian relief → glossy GLB'}
+            'pipeline': ('SAM 2.1 → YOLO26n-depth → depth-based 2.5D mesh → glossy GLB'
+                         if depth_estimator.ready() else 'SAM 2.1 → silhouette fallback → glossy GLB')}
 
 
 @app.get('/api/assets')
