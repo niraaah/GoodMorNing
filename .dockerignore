@@ -1,0 +1,10 @@
+**
+!containers/
+!containers/search/
+!containers/search/**
+!server/
+!server/__init__.py
+!server/db.py
+!server/goods/
+!server/goods/*.py
+!server/goods/sites.json

@@ -13,11 +13,11 @@ import httpx
 import scrapy
 from scrapy.crawler import CrawlerProcess
 from scrapy_playwright.page import PageMethod
-from .config import USER_AGENT, product_url
+from .config import USER_AGENT, product_url, egress_proxy
 
 def allowed(site, url):
     try:
-        response = httpx.get(site['origin']+'/robots.txt',timeout=10,follow_redirects=False,trust_env=False,headers={'User-Agent':USER_AGENT})
+        response = httpx.get(site['origin']+'/robots.txt',timeout=10,follow_redirects=False,trust_env=False,headers={'User-Agent':USER_AGENT},proxy=egress_proxy())
         if response.status_code != 200: return False
         robots=RobotFileParser(); robots.parse(response.text.splitlines())
         return robots.can_fetch(USER_AGENT,url)
@@ -28,7 +28,8 @@ async def restrict_browser(route, request):
     host=(urlsplit(request.url).hostname or '').lower()
     domains=('pokemonstore.co.kr','daewonshop.com','shopby.co.kr','nhncommerce.com','cdn-nhncommerce.com',
              'shopby-api.com','naver.net','pstatic.net','googleapis.com','gstatic.com','jsdelivr.net')
-    if request.url.startswith('data:') or any(host==d or host.endswith('.'+d) for d in domains):
+    parsed=urlsplit(request.url)
+    if request.url.startswith('data:') or (parsed.scheme=='https' and not parsed.username and not parsed.password and parsed.port in (None,443) and any(host==d or host.endswith('.'+d) for d in domains)):
         await route.continue_()
     else: await route.abort()
 
@@ -45,7 +46,7 @@ class GoodsSpider(scrapy.Spider):
             url=site['search'].format(query=quote(self.query))
             if not allowed(site,url):
                 self.states.append({'source':site['source'],'state':'blocked','message':'이 판매처는 현재 자동 수집을 허용하지 않아요.'}); continue
-            yield scrapy.Request(url,callback=self.parse,errback=self.failed,meta={'site':site,
+            yield scrapy.Request(url,callback=self.parse,errback=self.failed,meta={'site':site,'proxy':egress_proxy(),
                 'playwright':site.get('js',False),'playwright_page_init_callback':prepare_page,
                 'playwright_page_methods':[PageMethod('wait_for_timeout',1800)],'handle_httpstatus_all':True})
     def parse(self,response):
@@ -79,7 +80,7 @@ def main():
         'CONCURRENT_REQUESTS_PER_DOMAIN':1,'CONCURRENT_REQUESTS':2,'RETRY_ENABLED':False,
         'DOWNLOAD_TIMEOUT':25,'DOWNLOAD_MAXSIZE':8*1024*1024,'CLOSESPIDER_TIMEOUT':80,'COOKIES_ENABLED':False,
         'LOG_LEVEL':'ERROR','REDIRECT_ENABLED':False,'PLAYWRIGHT_BROWSER_TYPE':'chromium',
-        'PLAYWRIGHT_LAUNCH_OPTIONS':{'headless':True},'PLAYWRIGHT_DEFAULT_NAVIGATION_TIMEOUT':25000,
+        'PLAYWRIGHT_LAUNCH_OPTIONS':{'headless':True,'chromium_sandbox':True,'proxy':{'server':egress_proxy()}},'PLAYWRIGHT_DEFAULT_NAVIGATION_TIMEOUT':25000,
         'DOWNLOAD_HANDLERS':{'http':'scrapy_playwright.handler.ScrapyPlaywrightDownloadHandler','https':'scrapy_playwright.handler.ScrapyPlaywrightDownloadHandler'},
         'TWISTED_REACTOR':'twisted.internet.asyncioreactor.AsyncioSelectorReactor'})
     process.crawl(GoodsSpider,sites=sites,query=query,output=output); process.start()

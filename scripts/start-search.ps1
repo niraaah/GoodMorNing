@@ -1,22 +1,19 @@
 $ErrorActionPreference='Stop'
 $projectRoot=Split-Path $PSScriptRoot -Parent
 Set-Location $projectRoot
-$searchPython=Join-Path $projectRoot '.venv-search/Scripts/python.exe'
-if(-not(Test-Path -LiteralPath $searchPython)){Write-Output 'Search is not installed. Run scripts/setup-search.ps1.';exit 0}
-$keyPath=Join-Path $projectRoot 'data/search-service.key'
-if(-not(Test-Path -LiteralPath $keyPath)){
-  throw 'Database security setup required. Run scripts/setup-postgres.ps1 first.'
+. (Join-Path $PSScriptRoot 'docker-path.ps1')
+foreach($image in @('goodmorning-search:local','goodmorning-crawler:local','goodmorning-gateway:local','goodmorning-network-guard:local')){
+  docker image inspect $image *> $null
+  if($LASTEXITCODE -ne 0){throw 'Search container images missing. Run scripts/setup-search.ps1.'}
 }
-$searchKey=(Get-Content -LiteralPath $keyPath -Raw).Trim()
-try {
-  $health=Invoke-RestMethod http://127.0.0.1:8788/health -Headers @{Authorization="Bearer $searchKey"} -TimeoutSec 2
-  if($health.model -eq 'google/embeddinggemma-2'){Write-Output 'Goods search already running.';exit 0}
-  throw 'Port 8788 belongs to another service.'
-} catch [System.Net.Http.HttpRequestException] {
-} catch [System.Threading.Tasks.TaskCanceledException] {
+# Only migrate an old native worker after all replacement images exist.
+$legacyPid=Join-Path $projectRoot 'logs/search.pid'
+if(Test-Path -LiteralPath $legacyPid){
+  $legacyId=[int](Get-Content -LiteralPath $legacyPid)
+  if(Get-CimInstance Win32_Process -Filter "ProcessId=$legacyId"){
+    & (Join-Path $PSScriptRoot 'stop.ps1') -SearchOnly
+  }
+  Remove-Item -LiteralPath $legacyPid
 }
-Remove-Variable searchKey
-$logsPath=Join-Path $projectRoot 'logs'
-$searchProcess=Start-Process -FilePath $searchPython -ArgumentList @('-m','uvicorn','server.goods.worker:app','--host','127.0.0.1','--port','8788') -WorkingDirectory $projectRoot -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $logsPath 'search.out.log') -RedirectStandardError (Join-Path $logsPath 'search.err.log')
-$searchProcess.Id | Set-Content -LiteralPath (Join-Path $logsPath 'search.pid')
-Write-Output "Goods search PID: $($searchProcess.Id)"
+& '.venv/Scripts/python.exe' scripts/search_sandbox.py start
+if($LASTEXITCODE -ne 0){throw 'Isolated search startup failed. No native fallback is allowed.'}

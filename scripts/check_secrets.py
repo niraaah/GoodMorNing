@@ -31,14 +31,14 @@ def known_secrets():
     values=set()
     def add(value):
         if isinstance(value,str) and len(value.strip())>=12: values.add(value.strip())
-    for path in (ROOT/'data').glob('*.key'):
+    for path in (ROOT/'data').rglob('*.key'):
         if path.exists():add(path.read_text(encoding='utf-8').strip())
     keyfile=ROOT/'data/access.key'
     if keyfile.exists():
         key=keyfile.read_text(encoding='utf-8').strip();add(key)
         add(hmac.new(key.encode(),b'goodmorning-browser-session-v1',hashlib.sha256).hexdigest())
-    settings=ROOT/'data/search.local.json'
-    if settings.exists():
+    for settings in (ROOT/'data/search.local.json',ROOT/'data/search-sandbox/search.local.json'):
+        if not settings.exists():continue
         body=json.loads(settings.read_text(encoding='utf-8-sig'))
         for name in ('COUPANG_ACCESS_KEY','COUPANG_SECRET_KEY','NAVER_CLIENT_ID','NAVER_CLIENT_SECRET','HF_TOKEN'):
             add(body.get(name))

@@ -7,7 +7,7 @@ import hmac
 from datetime import datetime, timezone
 from urllib.parse import urlencode, quote
 import httpx
-from .config import settings, product_url
+from .config import settings, product_url, egress_proxy
 
 def search(query):
     config = settings()
@@ -23,7 +23,7 @@ def search(query):
     auth = f'CEA algorithm=HmacSHA256, access-key={access}, signed-date={date}, signature={signature}'
     try:
         response = httpx.get('https://api-gateway.coupang.com'+path+'?'+encoded,
-            headers={'Authorization':auth,'Content-Type':'application/json;charset=UTF-8'}, timeout=15, trust_env=False)
+            headers={'Authorization':auth,'Content-Type':'application/json;charset=UTF-8'}, timeout=15, trust_env=False,proxy=egress_proxy())
         response.raise_for_status()
         body = response.json()
         if str(body.get('rCode','0')) != '0': raise ValueError('API rejected request')
