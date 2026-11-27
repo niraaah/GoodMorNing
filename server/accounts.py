@@ -54,10 +54,18 @@ def revoke_provider(session):
     try:
         if provider=='kakao':
             result=httpx.post('https://kapi.kakao.com/v1/user/unlink',headers={'Authorization':'Bearer '+token},timeout=8,trust_env=False)
-        else:
+        elif provider=='naver':
+            from .social_auth import settings, configured
+            config=settings('naver')
+            if not configured(config): return False
+            result=httpx.post('https://nid.naver.com/oauth2.0/revoke',data={
+                'client_id':config['client_id'],'client_secret':config['client_secret'],
+                'token':token,'token_type_hint':'access_token'},timeout=8,trust_env=False,follow_redirects=False)
+        elif provider=='google':
             result=httpx.post('https://oauth2.googleapis.com/revoke',data={'token':token},timeout=8,trust_env=False)
+        else: return False
         return result.status_code==200
-    except httpx.HTTPError:return False
+    except (httpx.HTTPError, HTTPException, ValueError):return False
 
 
 class Profile(BaseModel):

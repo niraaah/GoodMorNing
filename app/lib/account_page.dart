@@ -252,7 +252,7 @@ class _AccountPageState extends State<AccountPage> {
           child: AlertDialog(
             title: Text(result['pending'] == true ? '탈퇴 접수 완료' : '탈퇴 완료'),
             content: Text(
-              '${result['message']}\n\n${result['provider_unlinked'] == true ? '소셜 서비스 연결도 해제했어요.' : '소셜 서비스 연결 해제를 확인하지 못했어요. Google·카카오의 연결된 서비스 설정에서도 해제해 주세요.'}\n\n이 브라우저의 굿모닝 저장 정보를 초기화해요. 다른 굿모닝 탭도 닫아 주세요.',
+              '${result['message']}\n\n${result['provider_unlinked'] == true ? '소셜 서비스 연결도 해제했어요.' : '소셜 서비스 연결 해제를 확인하지 못했어요. Google·카카오·네이버의 연결된 서비스 설정에서도 해제해 주세요.'}\n\n이 브라우저의 굿모닝 저장 정보를 초기화해요. 다른 굿모닝 탭도 닫아 주세요.',
             ),
             actions: [
               FilledButton(

@@ -104,7 +104,7 @@ class _AccountDialogState extends State<AccountDialog> {
                   child: const Text('로그아웃'),
                 ),
               ] else if (providers != null) ...[
-                const Text('구글 또는 카카오 계정으로 나의 에셋과 다이어리를 이어서 사용해 보세요.'),
+                const Text('구글·카카오·네이버 계정으로 나의 에셋과 다이어리를 이어서 사용해 보세요.'),
                 const SizedBox(height: 16),
                 if (legal != null) ...[
                   Wrap(
@@ -157,7 +157,7 @@ class _AccountDialogState extends State<AccountDialog> {
                     title: const Text('[필수] 만 14세 이상'),
                   ),
                 ],
-                for (final provider in ['google', 'kakao'])
+                for (final provider in ['google', 'kakao', 'naver'])
                   Padding(
                     padding: const EdgeInsets.only(bottom: 10),
                     child: OutlinedButton(
@@ -170,15 +170,39 @@ class _AccountDialogState extends State<AccountDialog> {
                           ? () => login(provider)
                           : null,
                       style: OutlinedButton.styleFrom(
-                        backgroundColor: provider == 'kakao'
+                        backgroundColor: provider == 'naver'
+                            ? const Color(0xff03a94d)
+                            : provider == 'kakao'
                             ? const Color(0xfffee500)
                             : Colors.white,
                         foregroundColor: const Color(0xff1f1f1f),
-                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        padding: EdgeInsets.symmetric(
+                          vertical: provider == 'naver' ? 0 : 16,
+                        ),
                       ),
-                      child: Text(
-                        '${provider == 'google' ? 'Google 계정으로 로그인' : '카카오 로그인'}${providers![provider]?['enabled'] == true ? '' : ' · 준비 중'}',
-                      ),
+                      child: provider == 'naver'
+                          ? Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Image.asset(
+                                  'assets/naver-login.png',
+                                  height: 48,
+                                  fit: BoxFit.contain,
+                                  semanticLabel: '네이버 로그인',
+                                ),
+                                if (providers![provider]?['enabled'] != true)
+                                  const Padding(
+                                    padding: EdgeInsets.only(bottom: 6),
+                                    child: Text(
+                                      '준비 중',
+                                      style: TextStyle(color: Colors.white),
+                                    ),
+                                  ),
+                              ],
+                            )
+                          : Text(
+                              '${provider == 'google' ? 'Google 계정으로 로그인' : '카카오 로그인'}${providers![provider]?['enabled'] == true ? '' : ' · 준비 중'}',
+                            ),
                     ),
                   ),
                 if (account?['kind'] == 'guest') ...[
@@ -194,7 +218,7 @@ class _AccountDialogState extends State<AccountDialog> {
                     ),
                   ),
                   const Text(
-                    '이미 가입한 계정에는 합쳐지지 않아요. 구글과 카카오 계정은 각각 별도의 수집방으로 연결돼요.',
+                    '이미 가입한 계정에는 합쳐지지 않아요. 로그인 서비스가 다르면 별도의 수집방으로 연결돼요.',
                     style: TextStyle(fontSize: 12),
                   ),
                 ],

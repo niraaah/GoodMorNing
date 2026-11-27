@@ -3,7 +3,7 @@ from pathlib import Path
 from fastapi import HTTPException
 from fastapi.responses import JSONResponse
 
-VERSION='2026-11-27-v2'
+VERSION='2026-11-27-v3'
 OPERATOR='Team GoodGeeks'
 CONTACT='goodgeeks.info@gmail.com'
 ROOT=Path(__file__).resolve().parents[1]

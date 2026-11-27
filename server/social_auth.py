@@ -1,4 +1,4 @@
-"""Google/Kakao authorization-code login with browser-bound, single-use state.
+"""Google/Kakao/Naver authorization-code login with browser-bound, single-use state.
 
 Provider secrets/tokens never reach the frontend. Application bearer sessions
 are random, stored as hashes, expire and can be revoked independently.
@@ -23,6 +23,7 @@ from .db import connection, data_dir
 from .diary_store import ensure_user
 
 PROVIDERS = {
+    'naver': ('https://nid.naver.com/oauth2.0/authorize', 'https://nid.naver.com/oauth2.0/token', 'https://openapi.naver.com/v1/nid/me', ''),
     'google': ('https://accounts.google.com/o/oauth2/v2/auth', 'https://oauth2.googleapis.com/token', 'https://openidconnect.googleapis.com/v1/userinfo', 'openid'),
     'kakao': ('https://kauth.kakao.com/oauth/authorize', 'https://kauth.kakao.com/oauth/token', 'https://kapi.kakao.com/v2/user/me', ''),
 }
@@ -36,10 +37,11 @@ def digest(value):
 def settings(provider):
     if provider not in PROVIDERS:
         raise HTTPException(404, '지원하지 않는 로그인 방식이에요.')
+    prefix = 'NAVER_LOGIN' if provider == 'naver' else provider.upper()
     path = data_dir()/'auth.local.json'
     try:
         values = json.loads(path.read_text(encoding='utf-8-sig')) if path.is_file() else {}
-        result = {key: str(os.getenv(provider.upper()+'_'+key.upper()) or values.get(provider.upper()+'_'+key.upper(), ''))
+        result = {key: str(os.getenv(prefix+'_'+key.upper()) or values.get(prefix+'_'+key.upper(), ''))
                   for key in ('client_id', 'client_secret', 'callback_url')}
     except (ValueError, AttributeError):
         raise HTTPException(503, '로그인 연결 설정을 확인하고 있어요.')
@@ -184,6 +186,8 @@ def register(app):
                            'redirect_uri': config['callback_url'], 'state': state, 'scope': PROVIDERS[provider][3]})
         if not PROVIDERS[provider][3]:
             query=urlencode({'response_type':'code','client_id':config['client_id'],'redirect_uri':config['callback_url'],'state':state})
+        if provider == 'naver' and request.state.member:
+            query += '&auth_type=reauthenticate'
         return response({'authorize_url': PROVIDERS[provider][0]+'?'+query, 'state': state, 'verifier': verifier})
 
     @app.post('/auth/{provider}/complete')
@@ -203,18 +207,29 @@ def register(app):
                 tokens = client.post(PROVIDERS[provider][1], data={
                     'grant_type': 'authorization_code', 'client_id': config['client_id'],
                     'client_secret': config['client_secret'], 'code': body.code,
-                    'redirect_uri': config['callback_url']})
+                    'redirect_uri': config['callback_url'],
+                    **({'state': body.state} if provider == 'naver' else {})})
                 tokens.raise_for_status()
-                token = tokens.json().get('access_token')
+                token_data = tokens.json()
+                if token_data.get('error'):
+                    raise ValueError()
+                token = token_data.get('access_token')
                 if not isinstance(token, str) or not token:
                     raise ValueError()
                 profile = client.get(PROVIDERS[provider][2], headers={'Authorization': 'Bearer '+token})
                 profile.raise_for_status()
                 data = profile.json()
-                subject = data.get('sub') if provider == 'google' else data.get('id')
+                if provider == 'naver':
+                    if data.get('resultcode') != '00' or not isinstance(data.get('response'), dict):
+                        raise ValueError()
+                    subject = data['response'].get('id')
+                else:
+                    subject = data.get('sub') if provider == 'google' else data.get('id')
                 if not isinstance(subject, (str, int)) or isinstance(subject, bool) or not 1 <= len(str(subject)) <= 200:
                     raise ValueError()
                 subject = str(subject)
+                if not subject.strip() or subject != subject.strip():
+                    raise ValueError()
                 name='새 수집가'  # Do not import social names, email or profile photos.
         except (httpx.HTTPError, ValueError, TypeError, AttributeError):
             raise HTTPException(502, '소셜 로그인을 확인하지 못했어요. 앱에서 다시 시도해 주세요.')

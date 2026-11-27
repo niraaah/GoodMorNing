@@ -89,7 +89,7 @@ def test_promoted_guest_is_revoked_and_logout_revokes_session(con, client, monke
     assert auth.member_session(con, session) is None
 
 
-@pytest.mark.parametrize('provider', ['google', 'kakao'])
+@pytest.mark.parametrize('provider', ['google', 'kakao', 'naver'])
 def test_oauth_state_origin_provider_verifier_expiry_and_replay(con, client, monkeypatch, provider):
     testclient, _ = client
     assert testclient.post('/auth/google/start', json=dict(terms=True,privacy=True,age14=True,policy_version=account_policy.VERSION), headers={'Origin':'https://evil.example'}).status_code == 400
@@ -102,9 +102,13 @@ def test_oauth_state_origin_provider_verifier_expiry_and_replay(con, client, mon
         def __exit__(self, *args): pass
         def post(self, url, data):
             calls.append(url)
+            assert url == auth.PROVIDERS[provider][1]
+            if provider == 'naver': assert data['state'] == body['state']
             return SimpleNamespace(raise_for_status=lambda: None, json=lambda: {'access_token':'isolated-provider-token'})
         def get(self, url, headers):
             profile = {'sub':'isolated-subject', 'name':'Test'} if provider == 'google' else {'id':12345,'kakao_account':{'profile':{'nickname':'Test'}}}
+            if provider == 'naver': profile = {'resultcode':'00','response':{'id':'isolated-subject'}}
+            assert url == auth.PROVIDERS[provider][2]
             return SimpleNamespace(raise_for_status=lambda: None, json=lambda: profile)
     # Only replace the backend provider client after the ASGI TestClient exists.
     monkeypatch.setattr(auth.httpx, 'Client', FakeClient)
@@ -154,3 +158,79 @@ def test_owner_capability_is_local_only(credential, host, external, cf_ray, allo
     request = Request({'type':'http', 'headers':headers, 'scheme':'http',
                        'server':(host,8787), 'path':'/'})
     assert auth.identify(request,key,external) == (('private',None) if allowed else (None,None))
+
+
+@pytest.mark.parametrize('profile', [
+    {'resultcode':'00','response':{'id':'naver-minimal'}},
+    {'resultcode':'00','response':{'id':'naver-full','email':'synthetic@example.invalid','name':'Do not import','nickname':'Ignore','profile_image':'https://example.invalid/photo.png'}},
+    {'resultcode':'024','response':{'id':'untrusted'}},
+    {'resultcode':'00','response':{}},
+    {'resultcode':'00','response':{'id':True}},
+    {'resultcode':'00','response':{'id':' '}},
+    {'resultcode':'00','response':[]},
+])
+def test_naver_profile_contract_and_minimal_collection(con,client,monkeypatch,profile):
+    testclient,_=client
+    public=testclient.get('/auth/providers').json()['naver']
+    assert set(public)=={'enabled','callback_url'}
+    started=testclient.post('/auth/naver/start',json=dict(terms=True,privacy=True,age14=True,policy_version=account_policy.VERSION)).json()
+    from urllib.parse import urlsplit,parse_qs
+    query=parse_qs(urlsplit(started['authorize_url']).query)
+    assert query['state']==[started['state']] and 'client_secret' not in query and 'scope' not in query
+    class FakeClient:
+        def __init__(self,**kwargs): assert kwargs['trust_env'] is False and kwargs['follow_redirects'] is False
+        def __enter__(self):return self
+        def __exit__(self,*args):pass
+        def post(self,url,data):
+            assert data['state']==started['state'] and data['grant_type']=='authorization_code'
+            return SimpleNamespace(raise_for_status=lambda:None,json=lambda:{'access_token':'synthetic-provider-only'})
+        def get(self,url,headers):
+            assert url=='https://openapi.naver.com/v1/nid/me'
+            assert headers['Authorization']=='Bearer synthetic-provider-only'
+            return SimpleNamespace(raise_for_status=lambda:None,json=lambda:profile)
+    monkeypatch.setattr(auth.httpx,'Client',FakeClient)
+    body={k:started[k] for k in ('state','verifier')}|{'code':'synthetic-code'}
+    response=testclient.post('/auth/naver/complete',json=body)
+    valid=profile.get('response',{}).get('id') in ('naver-minimal','naver-full') if isinstance(profile.get('response'),dict) else False
+    assert response.status_code==(200 if valid else 502)
+    assert 'synthetic-provider-only' not in response.text
+    assert testclient.post('/auth/naver/complete',json=body).status_code==400
+    if valid:
+        member=auth.member_session(con,response.json()['token'])
+        assert member['display_name']=='새 수집가' and not member['profile_ready'] and not member['has_avatar']
+        assert con.execute("select subject from auth_identities where provider='naver'").fetchone()['subject']==profile['response']['id']
+    else:assert not con.execute("select 1 from auth_identities where provider='naver'").fetchone()
+
+
+def test_naver_identity_is_separate_from_other_providers(con):
+    sessions=[auth.complete_identity(con,p,'same-subject','Ignored',None)[0] for p in ('google','kakao','naver')]
+    assert len({auth.member_session(con,t)['user_id'] for t in sessions})==3
+
+
+def test_naver_login_settings_do_not_use_shopping_credentials(tmp_path,monkeypatch):
+    import json
+    monkeypatch.setattr(auth,'data_dir',lambda:tmp_path)
+    for key in ('NAVER_LOGIN_CLIENT_ID','NAVER_LOGIN_CLIENT_SECRET','NAVER_LOGIN_CALLBACK_URL'):
+        monkeypatch.delenv(key,raising=False)
+    monkeypatch.setenv('NAVER_CLIENT_ID','synthetic-shopping-id')
+    monkeypatch.setenv('NAVER_CLIENT_SECRET','synthetic-shopping-secret')
+    assert not auth.configured(auth.settings('naver'))
+    (tmp_path/'auth.local.json').write_text(json.dumps({'NAVER_LOGIN_CLIENT_ID':'synthetic-login-id','NAVER_LOGIN_CLIENT_SECRET':'synthetic-login-secret'}))
+    config=auth.settings('naver')
+    assert config['client_id']=='synthetic-login-id' and config['client_secret']=='synthetic-login-secret'
+    assert config['callback_url']=='https://niraaah.github.io/GoodMorNing/auth/naver.html'
+
+
+@pytest.mark.parametrize('status',[200,400,401,503])
+def test_naver_withdrawal_revokes_token_without_url_credentials(monkeypatch,status):
+    from server import accounts
+    monkeypatch.setattr(auth,'settings',lambda p:{'client_id':'synthetic-client','client_secret':'synthetic-secret'})
+    def post(url,**kwargs):
+        assert url=='https://nid.naver.com/oauth2.0/revoke' and '?' not in url
+        assert kwargs['data']=={'client_id':'synthetic-client','client_secret':'synthetic-secret','token':'synthetic-access','token_type_hint':'access_token'}
+        assert kwargs['trust_env'] is False and kwargs['follow_redirects'] is False
+        return SimpleNamespace(status_code=status)
+    monkeypatch.setattr(accounts.httpx,'post',post)
+    accounts.remember_provider('synthetic-naver-session','naver','synthetic-access')
+    assert accounts.revoke_provider('synthetic-naver-session') is (status==200)
+    assert accounts.revoke_provider('synthetic-naver-session') is False
