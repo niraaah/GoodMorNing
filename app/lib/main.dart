@@ -182,6 +182,7 @@ class _StudioState extends State<Studio> {
       if (mounted)
         setState(() {
           loading = false;
+          health = null;
           error = Api.errorMessage(e);
         });
       return;
@@ -224,6 +225,7 @@ class _StudioState extends State<Studio> {
       if (mounted)
         setState(() {
           loading = false;
+          health = null;
           error = Api.errorMessage(e);
         });
     }
