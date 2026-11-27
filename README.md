@@ -69,7 +69,7 @@
 - 사진 업로드 후 사각형으로 굿즈 영역 선택
 - 모바일에서 사진 위 터치는 영역 선택이 우선이며 사진 밖에서 스크롤합니다. 유효한 영역을 선택하고 저장하면 창이 닫히고 에셋 화면에서 업로드·생성 상태를 표시합니다. 취소는 업로드를 시작하지 않고 창을 닫습니다.
 - **SAM 2.1**로 누끼 분리: Windows의 ONNX Runtime DirectML로 로컬 AMD GPU 사용
-- 누끼 영역의 깊이를 **YOLO26n-depth**(ONNX, DirectML/CPU)로 추정하고, 가까운 부분일수록 높게 볼록한 표면을 만듭니다. 가우시안 입자와 함께 `.ply`, `.splat`, `.glb`, PNG로 저장합니다.
+- 누끼 영역의 깊이를 **YOLO26n-depth**(ONNX, DirectML/CPU)로 추정하고, 가까운 부분일수록 높게 볼록한 표면을 만듭니다. 이 깊이로 2.5D 메시를 만들고 다이어리용 `.glb`와 PNG로 저장합니다. `.ply`/`.splat`은 이미 만든 표면의 보조 내보내기입니다.
 - 만드는 단계마다 과정 사진을 남깁니다(`/files/{id}/process.jpg`). 아래 [스티커 처리 흐름](#스티커-처리-흐름) 참고
 - 생성 작업의 대기·진행률·실패 표시, 완료된 스티커를 에셋 보관함에 추가
 - 다이어리에 스티커와 폴라로이드 추가, 끌어서 이동, 크기·회전·순서 조절, 선택 항목 제거
@@ -100,8 +100,8 @@ flowchart LR
   A[사진 + 선택 영역] --> B[SAM 2.1 / AMD DirectML]
   B --> C[누끼 이미지]
   C --> Y[YOLO26n-depth 깊이]
-  Y --> D[깊이 기반 볼록 높이 + Gaussian 표면]
-  D --> E[Gaussian PLY / SPLAT]
+  Y --> D[깊이 기반 볼록 높이와 2.5D 메시]
+  D -. 보조 내보내기 .-> E[PLY / SPLAT]
   D --> F[유광 GLB + PNG]
   F --> G[에셋 보관함]
   G --> H[Flutter 입체 다이어리]
@@ -114,7 +114,11 @@ flowchart LR
 
 깊이는 사진 한 장에서 추정한 값(미터, 가까울수록 작음)입니다. 누끼 안에서 2~98% 범위를 0~1로 바꿔, 굿즈 긴 변의 5%까지 볼록하게 올립니다. 이 비율은 goodmorning-3d의 SAM 3D 샘플 스티커와 같습니다. 깊이 모델이 없으면 이전처럼 윤곽에서 떨어진 거리로 높이를 만들고, `sticker.json`의 `depth`에 `silhouette-distance`로 기록합니다. 모델은 `scripts/setup_models.py`가 Ultralytics 공개 릴리스(v8.4.0)에서 SHA-256을 확인해 받습니다.
 
-**SAM 3D는 새 스티커 생성에 사용하지 않습니다.** 현재 사진 한 장의 보이는 면과 윤곽·깊이에서 높이를 만드는 **2.5D Gaussian relief** 구현입니다. 여러 시점의 사진으로 최적화하는 3D Gaussian Splatting 학습이나 보이지 않는 뒷면의 3D 복원은 포함하지 않습니다. 가우시안 표현은 PLY/SPLAT로 저장하며, 다이어리에서는 같은 표면을 GLB 메시로 베이크해 유광 반사를 표시합니다. 원본 저장소에서 가져온 기본 스티커 3개는 미리 생성된 샘플이며 출처는 메타데이터에 구분됩니다.
+**현재 형상 생성은 YOLO 깊이 기반 2.5D 메시입니다.** [기여자 PR #2](https://github.com/niraaah/GoodMorNing/pull/2)의 단일 사진 처리 변경을 반영했습니다. 원본 RGB 사진으로 YOLO26n-depth가 깊이를 추정하고 SAM2 누끼 안의 값을 볼록 높이로 사용합니다. 사진에서 깊이를 추론하는 주체는 YOLO이며, 일반적인 다중 시점 COLMAP/3D Gaussian Splatting 학습이나 SAM 3D 추론은 새 생성 경로에 없습니다. 보이지 않는 뒷면까지 복원하는 방식도 아닙니다.
+
+PR에도 남아 있는 `server/gaussian.py`는 **이미 계산된 색·높이의 Gaussian 필터 후처리와 PLY/SPLAT 보조 내보내기**입니다. 이 필터는 최종 GLB 표면에도 반영되지만 사진으로부터 깊이나 형상을 학습하는 단계는 아닙니다. 다이어리는 GLB 메시와 유광 재질을 표시합니다. 원본 저장소의 기본 스티커 3개는 미리 생성된 별도 샘플입니다.
+
+API/기존 DB 호환용 식별자 `sam2-gaussian`은 유지합니다. 이 옛 이름이 현재 깊이 모델을 뜻하지는 않습니다. 실제 생성 방식은 `sticker.json`의 `depth`로 확인하며, 새 생성물의 `reconstruction`은 `yolo-depth-relief` 또는 모델 미설치 시 `silhouette-relief`로 기록합니다. 이전 생성물의 옛 `reconstruction` 문구는 소급 변경하지 않습니다.
 
 배경을 지우려면 사진에서 **굿즈를 감싸는 사각형을 직접 그려 주세요.** 전체 사진에 손이나 여러 물체가 함께 있으면 선택 영역에 따라 누끼 결과가 달라집니다. 이미 투명한 PNG는 알파를 사용합니다. ‘배경 포함’ 선택 시 사진 전체를 스티커로 만듭니다.
 
@@ -153,7 +157,7 @@ GoodMorNing/
 │  ├─ stickers.py             누끼 → 깊이 → 볼록 스티커 생성
 │  ├─ depth.py                YOLO26n-depth ONNX 깊이 추정
 │  ├─ process.py              단계별 과정 사진 기록
-│  ├─ gaussian.py             Gaussian 표면·PLY/SPLAT 내보내기
+│  ├─ gaussian.py             계산된 표면의 필터 후처리·PLY/SPLAT 내보내기
 │  ├─ access.py               외부 접속 키·세션 쿠키
 │  ├─ notebook.py             원본 다이어리 페이지·첨부 파일의 소유자별 저장
 │  ├─ goods/                  상품 검색 API·쿠팡 서명·Scrapy/Playwright·EmbeddingGemma 2
