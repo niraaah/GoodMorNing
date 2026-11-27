@@ -41,6 +41,9 @@ def test_sessions_expire_and_revoke(con, column):
 def isolated_data(tmp_path, monkeypatch):
     monkeypatch.setenv('GOODMORNING_ADMIN_DATABASE_URL', db.admin_url())
     monkeypatch.setattr(db, 'data_dir', lambda: tmp_path)
+    auth._registrations.clear()
+    yield
+    auth._registrations.clear()
 
 
 @pytest.fixture
@@ -121,7 +124,8 @@ def test_oauth_state_origin_provider_verifier_expiry_and_replay(con, client, mon
         assert testclient.post(f'/auth/{route}/complete', json=payload, headers={'Origin':origin}).status_code == 400
     assert not calls
     result = testclient.post(f'/auth/{provider}/complete', json=body)
-    assert result.status_code == 200 and result.json()['token'].startswith('member.')
+    assert result.status_code == 200 and len(result.json()['signup_token']) == 43
+    assert not con.execute('SELECT 1 FROM account_profiles').fetchone()
     assert result.headers['cache-control'] == 'no-store'
     assert testclient.post(f'/auth/{provider}/complete', json=body).status_code == 400
     assert len(calls) == 1
@@ -196,8 +200,11 @@ def test_naver_profile_contract_and_minimal_collection(con,client,monkeypatch,pr
     assert 'synthetic-provider-only' not in response.text
     assert testclient.post('/auth/naver/complete',json=body).status_code==400
     if valid:
-        member=auth.member_session(con,response.json()['token'])
-        assert member['display_name']=='새 수집가' and not member['profile_ready'] and not member['has_avatar']
+        assert not con.execute('select 1 from account_profiles').fetchone()
+        registered=testclient.post('/auth/register',json={'signup_token':response.json()['signup_token'],'nickname':'내 수집방',**CONSENT})
+        assert registered.status_code==200
+        member=auth.member_session(con,registered.json()['token'])
+        assert member['display_name']=='내 수집방' and member['profile_ready'] and not member['has_avatar']
         assert con.execute("select subject from auth_identities where provider='naver'").fetchone()['subject']==profile['response']['id']
     else:assert not con.execute("select 1 from auth_identities where provider='naver'").fetchone()
 
@@ -234,3 +241,80 @@ def test_naver_withdrawal_revokes_token_without_url_credentials(monkeypatch,stat
     accounts.remember_provider('synthetic-naver-session','naver','synthetic-access')
     assert accounts.revoke_provider('synthetic-naver-session') is (status==200)
     assert accounts.revoke_provider('synthetic-naver-session') is False
+
+
+CONSENT=dict(terms=True,privacy=True,age14=True,policy_version=account_policy.VERSION)
+
+def make_signup(subject='signup-test', candidate=None):
+    return auth.pending_registration(auth.settings('google'),subject,'synthetic-only-token',candidate,'https://app.example')['signup_token']
+
+@pytest.mark.parametrize('provider',['google','kakao','naver'])
+def test_existing_login_needs_no_signup_consent(con,client,monkeypatch,provider):
+    testclient,_=client
+    auth.complete_identity(con,provider,'returning-user','ignored',None)
+    con.execute("UPDATE account_profiles SET display_name='기존 닉네임',profile_ready=true,terms_version=%s,privacy_version=%s,agreed_at=now()-interval '1 day'",(account_policy.VERSION,account_policy.VERSION))
+    before=dict(con.execute('select display_name,agreed_at,terms_version,privacy_version from account_profiles').fetchone())
+    started=testclient.post(f'/auth/{provider}/start',json={})
+    assert started.status_code==200
+    state=started.json()
+    class Provider:
+        def __init__(self,**kwargs):pass
+        def __enter__(self):return self
+        def __exit__(self,*args):pass
+        def post(self,*args,**kwargs):return SimpleNamespace(raise_for_status=lambda:None,json=lambda:{'access_token':'synthetic-only'})
+        def get(self,*args,**kwargs):return SimpleNamespace(raise_for_status=lambda:None,json=lambda:{'sub':'returning-user','id':'returning-user','resultcode':'00','response':{'id':'returning-user'}})
+    monkeypatch.setattr(auth.httpx,'Client',Provider)
+    result=testclient.post(f'/auth/{provider}/complete',json={k:state[k] for k in ('state','verifier')}|{'code':'synthetic'})
+    assert result.status_code==200 and result.json()['token'].startswith('member.')
+    assert 'signup_token' not in result.json()
+    assert dict(con.execute('select display_name,agreed_at,terms_version,privacy_version from account_profiles').fetchone())==before
+    assert not auth._registrations
+
+@pytest.mark.parametrize('invalid',[{}, {**CONSENT,'privacy':False}, {**CONSENT,'age14':False}, {**CONSENT,'terms':False}, {**CONSENT,'policy_version':'old'}])
+def test_signup_requires_consent_before_persisting_or_promoting(con,client,invalid):
+    http,_=client;ticket=make_signup(candidate='guest-untouched')
+    result=http.post('/auth/register',json={'signup_token':ticket,'nickname':'새 닉네임','keep_guest':True,**invalid})
+    assert result.status_code==422
+    assert not con.execute('select 1 from auth_identities').fetchone()
+    assert not con.execute('select 1 from account_profiles').fetchone()
+    assert not con.execute('select 1 from account_sessions').fetchone()
+    assert auth.guest_available(con,'guest-untouched')
+
+@pytest.mark.parametrize('keep',[False,True])
+def test_signup_promotion_is_explicit_and_ticket_single_use(con,client,keep):
+    http,_=client;ticket=make_signup(candidate='guest-chosen')
+    expires=auth._registrations[auth.digest(ticket)]['expires']
+    body={'signup_token':ticket,'nickname':'나의 닉네임','keep_guest':keep,**CONSENT}
+    result=http.post('/auth/register',json=body)
+    assert result.status_code==200 and result.json()['guest_promoted'] is keep
+    assert auth.accounts._provider_tokens[auth.digest(result.json()['token'])][0] <= expires
+    user=auth.member_session(con,result.json()['token'])
+    assert user['profile_ready'] and user['display_name']=='나의 닉네임'
+    assert (user['owner']=='guest-chosen') is keep
+    assert http.post('/auth/register',json=body).status_code==400
+
+def test_signup_cancel_expiry_origin_and_config_binding(con,client,monkeypatch):
+    http,_=client;ticket=make_signup()
+    body={'signup_token':ticket,'nickname':'새 계정',**CONSENT}
+    assert http.post('/auth/register',json=body,headers={'Origin':'https://evil.example'}).status_code==400
+    http.post('/auth/register/cancel',json={'signup_token':ticket},headers={'Origin':'https://evil.example'})
+    assert auth.digest(ticket) in auth._registrations
+    assert http.post('/auth/register/cancel',json={'signup_token':ticket}).status_code==200
+    assert http.post('/auth/register',json=body).status_code==400
+    ticket=make_signup();auth._registrations[auth.digest(ticket)]['expires']=0
+    assert http.post('/auth/register',json={**body,'signup_token':ticket}).status_code==400
+    assert not auth._registrations
+    ticket=make_signup();config=auth.settings('google');config['client_secret']='changed-synthetic'
+    monkeypatch.setattr(auth,'settings',lambda p:config)
+    assert http.post('/auth/register',json={**body,'signup_token':ticket}).status_code==400
+    assert not con.execute('select 1 from account_profiles').fetchone()
+
+def test_parallel_signup_tickets_cannot_overwrite_existing_profile(con,client):
+    http,_=client;first=make_signup();second=make_signup()
+    one=http.post('/auth/register',json={'signup_token':first,'nickname':'첫번째 별명',**CONSENT})
+    assert one.status_code==200
+    before=dict(con.execute('select display_name,agreed_at from account_profiles').fetchone())
+    two=http.post('/auth/register',json={'signup_token':second,'nickname':'덮어쓰기 시도',**CONSENT})
+    assert two.status_code==200
+    assert dict(con.execute('select display_name,agreed_at from account_profiles').fetchone())==before
+    assert auth.member_session(con,one.json()['token'])['user_id']==auth.member_session(con,two.json()['token'])['user_id']

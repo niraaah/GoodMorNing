@@ -168,27 +168,51 @@ class Api {
     web.window.sessionStorage.setItem('goodmorning-token', token);
   }
 
-  static Future<void> socialLogin(
-    String provider,
-    bool keepGuest,
-    String policyVersion,
-    bool terms,
-    bool privacy,
-    bool age14,
-  ) async {
+  static String? get signupTicket {
+    try {
+      final raw = web.window.sessionStorage.getItem('goodmorning-signup');
+      if (raw == null) return null;
+      final value = jsonDecode(raw);
+      if (value['server'] == uri('/').origin &&
+          value['expires'] > DateTime.now().millisecondsSinceEpoch &&
+          RegExp(r'^[A-Za-z0-9_-]{43}$').hasMatch(value['token']))
+        return value['token'];
+    } catch (_) {}
+    web.window.sessionStorage.removeItem('goodmorning-signup');
+    return null;
+  }
+
+  static Future<void> cancelSignup(String ticket) async {
+    try {
+      await post('/auth/register/cancel', {'signup_token': ticket});
+    } finally {
+      web.window.sessionStorage.removeItem('goodmorning-signup');
+    }
+  }
+
+  static void acceptSignup(dynamic result) {
+    final fresh = result['token'];
+    if (fresh is! String ||
+        !RegExp(r'^member\.[A-Za-z0-9_-]{43}$').hasMatch(fresh))
+      throw Exception('가입 응답을 확인하지 못했어요. 다시 로그인해 주세요.');
+    if (result['guest_promoted'] == true &&
+        web.window.localStorage.getItem('goodmorning-visitor-token') == token)
+      web.window.localStorage.removeItem('goodmorning-visitor-token');
+    token = fresh;
+    _images.clear();
+    web.window.sessionStorage.setItem('goodmorning-token', token);
+    web.window.sessionStorage.removeItem('goodmorning-signup');
+  }
+
+  static Future<void> socialLogin(String provider) async {
     if (!['google', 'kakao', 'naver'].contains(provider))
       throw Exception('지원하지 않는 로그인 방식이에요.');
     final providers = await get('/auth/providers');
     final callback = Uri.parse(providers[provider]['callback_url'] as String);
     if (callback.origin != Uri.base.origin)
       throw Exception('공개 웹 주소에서 로그인을 이용해 주세요.');
-    final result = await post('/auth/$provider/start', {
-      'keep_guest': keepGuest,
-      'policy_version': policyVersion,
-      'terms': terms,
-      'privacy': privacy,
-      'age14': age14,
-    });
+    web.window.sessionStorage.removeItem('goodmorning-signup');
+    final result = await post('/auth/$provider/start', {});
     web.window.sessionStorage.setItem(
       'goodmorning-oauth',
       jsonEncode({
@@ -204,6 +228,8 @@ class Api {
   }
 
   static Future<void> logout() async {
+    web.window.sessionStorage.removeItem('goodmorning-signup');
+    web.window.sessionStorage.removeItem('goodmorning-withdraw-after-login');
     await post('/auth/logout');
     web.window.sessionStorage.removeItem('goodmorning-token');
     web.window.sessionStorage.removeItem('goodmorning-oauth');

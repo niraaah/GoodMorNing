@@ -9,6 +9,8 @@ import json
 import os
 import re
 import secrets
+import threading
+import time
 from urllib.parse import urlencode, urlsplit
 from uuid import uuid4
 
@@ -27,7 +29,36 @@ PROVIDERS = {
     'google': ('https://accounts.google.com/o/oauth2/v2/auth', 'https://oauth2.googleapis.com/token', 'https://openidconnect.googleapis.com/v1/userinfo', 'openid'),
     'kakao': ('https://kauth.kakao.com/oauth/authorize', 'https://kauth.kakao.com/oauth/token', 'https://kapi.kakao.com/v2/user/me', ''),
 }
-PUBLIC_PATHS = {'/auth/providers','/auth/legal'} | {f'/auth/{p}/{action}' for p in PROVIDERS for action in ('start', 'complete')}
+PUBLIC_PATHS = {'/auth/providers','/auth/legal','/auth/register','/auth/register/cancel'} | {f'/auth/{p}/{action}' for p in PROVIDERS for action in ('start', 'complete')}
+
+
+# Unregistered identities remain ephemeral until explicit signup consent.
+_registrations = {}
+_registration_lock = threading.RLock()
+
+def cleanup_registrations():
+    with _registration_lock:
+        for key, value in list(_registrations.items()):
+            if value['expires'] <= time.monotonic(): _registrations.pop(key, None)
+
+def pending_registration(config, subject, token, candidate, origin):
+    with _registration_lock:
+        cleanup_registrations()
+        if len(_registrations) >= 2048:
+            raise HTTPException(503, '가입 요청이 많아요. 잠시 후 다시 시도해 주세요.')
+        ticket = secrets.token_urlsafe(32)
+        _registrations[digest(ticket)] = dict(provider=config['provider'], subject=subject,
+            access_token=token, candidate=candidate, origin=origin,
+            config_hash=digest(json.dumps(config, sort_keys=True)), expires=time.monotonic()+600)
+        return {'signup_token':ticket, 'expires_in':600}
+
+class Registration(accounts.Profile):
+    signup_token: str = Field(min_length=43, max_length=43, pattern=r'^[A-Za-z0-9_-]+$')
+    keep_guest: bool = False
+
+class CancelRegistration(BaseModel):
+    model_config=ConfigDict(extra='forbid',strict=True)
+    signup_token: str = Field(min_length=43,max_length=43,pattern=r'^[A-Za-z0-9_-]+$')
 
 
 def digest(value):
@@ -127,6 +158,7 @@ def complete_identity(con, provider, subject, name, candidate):
 class Begin(BaseModel):
     model_config=ConfigDict(extra='forbid',strict=True)
     keep_guest: bool = False
+    # Legacy clients may send these; login never records them as signup consent.
     terms:bool=False
     privacy:bool=False
     age14:bool=False
@@ -161,7 +193,6 @@ def register(app):
 
     @app.post('/auth/{provider}/start')
     def start(provider: str, body: Begin, request: Request):
-        account_policy.accepted(body)
         config = settings(provider)
         if not configured(config):
             raise HTTPException(503, '소셜 로그인 연결을 준비 중이에요. 잠시 후 다시 이용해 주세요.')
@@ -173,7 +204,7 @@ def register(app):
         client_hash = hmac.new(app.state.access_key.encode(), (client or 'unknown').encode(), hashlib.sha256).hexdigest()
         state, verifier = secrets.token_urlsafe(32), secrets.token_urlsafe(32)
         owner = request.state.owner
-        candidate = owner if body.keep_guest and owner and owner.startswith('guest-') and not request.state.member else None
+        candidate = owner if owner and owner.startswith('guest-') and not request.state.member else None
         with connection() as con:
             con.execute('SELECT pg_advisory_xact_lock(hashtextextended(%s,0))', ('oauth-start:'+client_hash,))
             con.execute('DELETE FROM oauth_attempts WHERE expires_at<now()')
@@ -200,7 +231,7 @@ def register(app):
                 AND verifier_hash=%s AND origin=%s AND config_hash=%s AND consumed_at IS NULL AND expires_at>now()
                 RETURNING guest_owner,policy_version''', (digest(body.state), digest(body.verifier), request.headers.get('origin',''),
                 digest(json.dumps(config,sort_keys=True)))).fetchone()
-        if not attempt or attempt['policy_version']!=account_policy.VERSION:
+        if not attempt:
             raise HTTPException(400, '로그인 요청이 만료되었어요. 앱에서 다시 시작해 주세요.')
         try:
             with httpx.Client(timeout=15, trust_env=False, follow_redirects=False) as client:
@@ -234,9 +265,57 @@ def register(app):
         except (httpx.HTTPError, ValueError, TypeError, AttributeError):
             raise HTTPException(502, '소셜 로그인을 확인하지 못했어요. 앱에서 다시 시도해 주세요.')
         with connection() as con:
-            session, promoted = complete_identity(con, provider, subject, name, attempt['guest_owner'])
+            existing = con.execute('SELECT 1 FROM auth_identities WHERE provider=%s AND subject=%s', (provider, subject)).fetchone()
+            if existing:
+                session, promoted = complete_identity(con, provider, subject, name, None)
+        if not existing:
+            return response(pending_registration(config, subject, token, attempt['guest_owner'], request.headers.get('origin','')))
         accounts.remember_provider(digest(session),provider,token)
         return response({'token': session, 'guest_promoted': promoted})
+
+    @app.post('/auth/register')
+    async def signup(request: Request):
+        value = await accounts.payload(request, Registration, 2_900_000)
+        with _registration_lock:
+            cleanup_registrations()
+            pending = _registrations.get(digest(value.signup_token))
+            if not pending or pending['origin'] != request.headers.get('origin',''):
+                raise HTTPException(400, '가입 요청이 만료되었어요. 다시 로그인해 주세요.')
+        account_policy.accepted(value)
+        name = accounts.nickname(value.nickname)
+        if value.photo and value.remove_photo: raise HTTPException(422, '사진 변경 방법을 하나만 선택해 주세요.')
+        image = accounts.avatar(value.photo) if value.photo else None
+        with _registration_lock:
+            cleanup_registrations()
+            item = _registrations.get(digest(value.signup_token))
+            if not item or item['origin'] != request.headers.get('origin',''):
+                raise HTTPException(400, '가입 요청이 만료되었어요. 다시 로그인해 주세요.')
+            config = settings(item['provider'])
+            if item['config_hash'] != digest(json.dumps(config,sort_keys=True)):
+                raise HTTPException(400, '로그인 설정이 변경되었어요. 다시 로그인해 주세요.')
+            with connection() as con:
+                session, promoted = complete_identity(con, item['provider'], item['subject'], name,
+                    item['candidate'] if value.keep_guest else None)
+                user = member_session(con, session)
+                # A parallel signup may already have completed this identity.
+                # Never overwrite an existing profile or its consent history.
+                con.execute("""UPDATE account_profiles SET display_name=%s,avatar=%s,profile_ready=true,
+                    terms_version=%s,privacy_version=%s,agreed_at=now()
+                    WHERE user_id=%s AND NOT profile_ready AND NOT deleting""",
+                    (name,image,account_policy.VERSION,account_policy.VERSION,user['user_id']))
+            _registrations.pop(digest(value.signup_token),None)
+            accounts.remember_provider(digest(session),item['provider'],item['access_token'],expires=item['expires'])
+        return response({'token':session,'guest_promoted':promoted})
+
+    @app.post('/auth/register/cancel')
+    async def cancel_signup(request: Request):
+        value = await accounts.payload(request, CancelRegistration, 1024)
+        with _registration_lock:
+            cleanup_registrations()
+            item = _registrations.get(digest(value.signup_token))
+            if item and item['origin'] == request.headers.get('origin',''):
+                _registrations.pop(digest(value.signup_token),None)
+        return response({'cancelled':True})
 
     @app.post('/auth/logout')
     def logout(request: Request):

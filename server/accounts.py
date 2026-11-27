@@ -36,11 +36,11 @@ async def owner_lock(owner):
         if not entry[1]:_locks.pop(owner,None)
 
 
-def remember_provider(session,provider,token):
+def remember_provider(session,provider,token,expires=None):
     now=time.monotonic()
     for key,value in list(_provider_tokens.items()):
         if value[0]<=now:_provider_tokens.pop(key,None)
-    if len(_provider_tokens)<2048:_provider_tokens[session]=(now+600,provider,token)
+    if len(_provider_tokens)<2048:_provider_tokens[session]=(min(now+600,expires) if expires is not None else now+600,provider,token)
 
 
 def discard_provider(session):
@@ -189,6 +189,8 @@ def erase_member(user,owner):
 
 
 def maintenance():
+    from .social_auth import cleanup_registrations
+    cleanup_registrations()
     now=time.time()
     # Only this project's managed backup/legacy DB files; live PostgreSQL is untouched.
     backup=db.data_dir()/'backups'
