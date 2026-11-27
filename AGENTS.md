@@ -1,5 +1,13 @@
 # Sensitive-data handling
 
+## Branch workflow
+
+- Keep `main` as the deployable branch. Start changes from updated `origin/main` on `feature/<topic>`, `fix/<topic>` or `chore/<topic>`; do not commit changes directly on `main`.
+- Push the working branch and open a pull request to `main`. Run the applicable build and secret checks before merging; use the PR checks and retain a clear description of changes and validation.
+- Local runtime installs, credentials, database backups and `TODO.md` stay outside Git. A code merge does not mean a local database migration or model installation has run.
+
+## Credentials
+
 - Never print, paste into chat, commit, or publish actual API keys, access keys, bearer tokens, private connection URLs, or passwords. Report only the name, presence, and result of a check.
 - Keep local credentials in ignored `data/` files or process environment variables. Tracked examples must contain empty credential values. GitHub Pages and Actions variables are public configuration only; never place secrets in frontend files or build arguments.
 - Before every commit, run `python scripts/check_secrets.py` and the installed Gitleaks staged check. Keep `.githooks/pre-commit` enabled. Do not bypass hooks, suppress a real finding, add an allowlist, or disable the CI security gate to get a commit/deployment through.

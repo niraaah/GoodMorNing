@@ -1,0 +1,30 @@
+name: Validate pull request
+on:
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.50.1'
+          channel: stable
+          cache: true
+      - name: Check Python syntax
+        run: python3 -m compileall -q server scripts
+      - name: Prepare frontend
+        run: python3 scripts/prepare_frontend.py
+      - run: flutter pub get
+        working-directory: app
+      - run: flutter build web --release --base-href "/${{ github.event.repository.name }}/"
+        working-directory: app
+      - run: python3 scripts/finalize_web.py
+      - name: Scan build artifact
+        run: python3 scripts/check_secrets.py --artifact app/build/web

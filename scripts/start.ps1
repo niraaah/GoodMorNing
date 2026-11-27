@@ -8,6 +8,7 @@ if (-not (Test-Path -LiteralPath 'app\build\web\index.html')) { Write-Output 'St
 $logsPath = Join-Path $projectRoot 'logs'
 New-Item -ItemType Directory -Path $logsPath -Force | Out-Null
 # Both servers use PostgreSQL in Docker (scripts\setup-postgres.ps1).
+. (Join-Path $PSScriptRoot 'docker-path.ps1')
 docker start goodmorning-postgres | Out-Null
 if ($LASTEXITCODE -ne 0) { throw 'PostgreSQL is not available. Start Docker Desktop, then run scripts\setup-postgres.ps1.' }
 & (Join-Path $PSScriptRoot 'start-search.ps1')

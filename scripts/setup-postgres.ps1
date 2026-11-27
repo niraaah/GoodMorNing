@@ -5,6 +5,7 @@ param([int]$Port = 55432)
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path $PSScriptRoot -Parent
 Set-Location $projectRoot
+. (Join-Path $PSScriptRoot 'docker-path.ps1')
 $image = 'pgvector/pgvector:0.8.7-pg17'
 $name = 'goodmorning-postgres'
 $pythonPath = Join-Path $projectRoot '.venv\Scripts\python.exe'
