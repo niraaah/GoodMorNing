@@ -10,11 +10,7 @@ class AccountDialog extends StatefulWidget {
 
 class _AccountDialogState extends State<AccountDialog> {
   Map<String, dynamic>? account, providers, legal;
-  bool busy = false,
-      keepGuest = false,
-      terms = false,
-      privacy = false,
-      age14 = false;
+  bool busy = false;
   String? error;
   @override
   void initState() {
@@ -47,14 +43,7 @@ class _AccountDialogState extends State<AccountDialog> {
       error = null;
     });
     try {
-      await Api.socialLogin(
-        provider,
-        keepGuest,
-        legal!['version'],
-        terms,
-        privacy,
-        age14,
-      );
+      await Api.socialLogin(provider);
     } catch (e) {
       if (mounted)
         setState(() {
@@ -131,42 +120,13 @@ class _AccountDialogState extends State<AccountDialog> {
                       ),
                     ],
                   ),
-                  const Text(
-                    '필수 항목: 소셜 서비스 식별번호, 닉네임, 로그인·동의 기록. 목적: 계정 확인·자료 보관·보안. 보유: 탈퇴까지(세부 삭제·백업 기간은 방침 참고). 동의를 거부할 수 있으나 회원 기능은 이용할 수 없어요. 사진은 선택 사항이에요.',
-                    style: TextStyle(fontSize: 12, height: 1.5),
-                  ),
-                  CheckboxListTile(
-                    value: terms,
-                    onChanged: busy
-                        ? null
-                        : (v) => setState(() => terms = v ?? false),
-                    title: const Text('[필수] 이용약관 동의'),
-                  ),
-                  CheckboxListTile(
-                    value: privacy,
-                    onChanged: busy
-                        ? null
-                        : (v) => setState(() => privacy = v ?? false),
-                    title: const Text('[필수] 개인정보 수집·이용 동의'),
-                  ),
-                  CheckboxListTile(
-                    value: age14,
-                    onChanged: busy
-                        ? null
-                        : (v) => setState(() => age14 = v ?? false),
-                    title: const Text('[필수] 만 14세 이상'),
-                  ),
                 ],
                 for (final provider in ['google', 'kakao', 'naver'])
                   Padding(
                     padding: const EdgeInsets.only(bottom: 10),
                     child: OutlinedButton(
                       onPressed:
-                          !busy &&
-                              terms &&
-                              privacy &&
-                              age14 &&
-                              providers![provider]?['enabled'] == true
+                          !busy && providers![provider]?['enabled'] == true
                           ? () => login(provider)
                           : null,
                       style: OutlinedButton.styleFrom(
@@ -205,23 +165,10 @@ class _AccountDialogState extends State<AccountDialog> {
                             ),
                     ),
                   ),
-                if (account?['kind'] == 'guest') ...[
-                  CheckboxListTile(
-                    contentPadding: EdgeInsets.zero,
-                    value: keepGuest,
-                    onChanged: busy
-                        ? null
-                        : (value) => setState(() => keepGuest = value ?? false),
-                    title: const Text(
-                      '처음 가입할 때 현재 방문자 자료 가져오기',
-                      style: TextStyle(fontSize: 14),
-                    ),
-                  ),
-                  const Text(
-                    '이미 가입한 계정에는 합쳐지지 않아요. 로그인 서비스가 다르면 별도의 수집방으로 연결돼요.',
-                    style: TextStyle(fontSize: 12),
-                  ),
-                ],
+                const Text(
+                  '처음 이용하는 계정은 계정 확인 후 가입 동의와 프로필 설정을 진행해요.',
+                  style: TextStyle(fontSize: 12),
+                ),
               ],
               if (busy)
                 const Padding(

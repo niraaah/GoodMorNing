@@ -192,6 +192,16 @@ class _StudioState extends State<Studio> {
       return;
     }
     try {
+      final signupTicket = Api.signupTicket;
+      if (signupTicket != null && mounted) {
+        await Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) =>
+                AccountPage(onboarding: true, signupTicket: signupTicket),
+          ),
+        );
+      }
       var account = await Api.get('/auth/me');
       if (account['kind'] == 'member' && account['profile_ready'] != true) {
         if (!mounted) return;
@@ -202,6 +212,23 @@ class _StudioState extends State<Studio> {
           ),
         );
         account = await Api.get('/auth/me');
+      }
+      final withdrawalAt = int.tryParse(
+        web.window.sessionStorage.getItem('goodmorning-withdraw-after-login') ??
+            '',
+      );
+      web.window.sessionStorage.removeItem('goodmorning-withdraw-after-login');
+      if (withdrawalAt != null &&
+          DateTime.now().millisecondsSinceEpoch - withdrawalAt < 600000 &&
+          account['kind'] == 'member' &&
+          account['profile_ready'] == true &&
+          mounted) {
+        await Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => const AccountPage(resumeWithdrawal: true),
+          ),
+        );
       }
       final result = await Future.wait([
         Api.get('/api/assets'),

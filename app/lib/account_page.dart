@@ -57,8 +57,14 @@ class LegalPage extends StatelessWidget {
 }
 
 class AccountPage extends StatefulWidget {
-  final bool onboarding;
-  const AccountPage({super.key, this.onboarding = false});
+  final bool onboarding, resumeWithdrawal;
+  final String? signupTicket;
+  const AccountPage({
+    super.key,
+    this.onboarding = false,
+    this.signupTicket,
+    this.resumeWithdrawal = false,
+  });
   @override
   State<AccountPage> createState() => _AccountPageState();
 }
@@ -72,8 +78,10 @@ class _AccountPageState extends State<AccountPage> {
       terms = false,
       privacy = false,
       age14 = false,
-      done = false;
+      done = false,
+      keepGuest = false;
   String? error;
+  bool get signingUp => widget.signupTicket != null;
   bool get needsSetup => account?['profile_ready'] != true;
   @override
   void initState() {
@@ -90,7 +98,13 @@ class _AccountPageState extends State<AccountPage> {
   Future<void> load() async {
     try {
       final values = await Future.wait([
-        Api.get('/auth/me'),
+        signingUp
+            ? Future.value({
+                'name': '',
+                'profile_ready': false,
+                'profile_created': false,
+              })
+            : Api.get('/auth/me'),
         Api.get('/auth/legal'),
       ]);
       final me = Map<String, dynamic>.from(values[0]);
@@ -108,6 +122,10 @@ class _AccountPageState extends State<AccountPage> {
         image = photo;
         name.text = me['name'] == '새 수집가' ? '' : me['name'] ?? '';
       });
+      if (widget.resumeWithdrawal)
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) withdraw();
+        });
     } catch (_) {
       if (mounted) setState(() => error = '계정 정보를 불러오지 못했어요. 서버 연결을 확인해 주세요.');
     }
@@ -139,15 +157,19 @@ class _AccountPageState extends State<AccountPage> {
       error = null;
     });
     try {
-      await Api.post('/auth/profile', {
-        'nickname': name.text.trim(),
-        'photo': upload == null ? null : base64Encode(upload!),
-        'remove_photo': removePhoto,
-        'terms': terms,
-        'privacy': privacy,
-        'age14': age14,
-        'policy_version': legal!['version'],
-      });
+      final result =
+          await Api.post(signingUp ? '/auth/register' : '/auth/profile', {
+            if (signingUp) 'signup_token': widget.signupTicket,
+            if (signingUp) 'keep_guest': keepGuest,
+            'nickname': name.text.trim(),
+            'photo': upload == null ? null : base64Encode(upload!),
+            'remove_photo': removePhoto,
+            'terms': terms,
+            'privacy': privacy,
+            'age14': age14,
+            'policy_version': legal!['version'],
+          });
+      if (signingUp) Api.acceptSignup(result);
       if (!mounted) return;
       setState(() => done = true);
       Navigator.pop(context, true);
@@ -160,21 +182,46 @@ class _AccountPageState extends State<AccountPage> {
   }
 
   Future<void> reauthenticate() async {
-    if (legal == null) return;
+    final proceed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('계정을 한 번 더 확인할게요'),
+        content: const Text(
+          '로그인한 지 시간이 지나 탈퇴 전에 계정 확인이 필요해요. 다시 로그인하면 탈퇴 확인 화면으로 돌아와요.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('취소'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('계속'),
+          ),
+        ],
+      ),
+    );
+    if (proceed != true || !mounted) return;
     try {
       NearbyController.instance.stop();
-      await Api.socialLogin(
-        account!['provider'],
-        false,
-        legal!['version'],
-        true,
-        true,
-        true,
+      web.window.sessionStorage.setItem(
+        'goodmorning-withdraw-after-login',
+        DateTime.now().millisecondsSinceEpoch.toString(),
       );
+      await Api.socialLogin(account!['provider']);
     } catch (e) {
-      if (mounted)
-        setState(() => error = e.toString().replaceFirst('Exception: ', ''));
+      web.window.sessionStorage.removeItem('goodmorning-withdraw-after-login');
+      if (mounted) setState(() => error = Api.errorMessage(e));
     }
+  }
+
+  Future<void> cancelSignup() async {
+    try {
+      await Api.cancelSignup(widget.signupTicket!);
+    } catch (_) {}
+    if (!mounted) return;
+    setState(() => done = true);
+    Navigator.pop(context, false);
   }
 
   Future<void> withdraw() async {
@@ -264,6 +311,10 @@ class _AccountPageState extends State<AccountPage> {
         ),
       );
     } catch (e) {
+      if (e.toString().contains('다시 소셜 로그인한 뒤')) {
+        await reauthenticate();
+        return;
+      }
       if (mounted)
         setState(() => error = e.toString().replaceFirst('Exception: ', ''));
     } finally {
@@ -277,7 +328,21 @@ class _AccountPageState extends State<AccountPage> {
     child: Scaffold(
       appBar: AppBar(
         automaticallyImplyLeading: !widget.onboarding,
-        title: Text(needsSetup ? '처음 만나요 · 프로필 설정' : '계정 설정'),
+        title: Text(
+          needsSetup
+              ? (account?['profile_created'] == true
+                    ? '변경된 약관 확인'
+                    : '처음 만나요 · 회원가입')
+              : '계정 설정',
+        ),
+        actions: [
+          if (signingUp)
+            IconButton(
+              onPressed: busy ? null : cancelSignup,
+              icon: const Icon(Icons.close),
+              tooltip: '가입 취소',
+            ),
+        ],
       ),
       body: Center(
         child: ConstrainedBox(
@@ -366,7 +431,19 @@ class _AccountPageState extends State<AccountPage> {
                         ),
                       ],
                     ),
+                    if (signingUp && Api.token.startsWith('guest.'))
+                      CheckboxListTile(
+                        value: keepGuest,
+                        onChanged: busy
+                            ? null
+                            : (v) => setState(() => keepGuest = v ?? false),
+                        title: const Text('현재 방문자 자료 가져오기'),
+                      ),
                     if (needsSetup) ...[
+                      const Text(
+                        '필수 항목: 소셜 서비스 식별번호, 닉네임, 로그인·동의 기록. 목적: 계정 확인·자료 보관·보안. 보유: 탈퇴까지(세부 삭제·백업 기간은 방침 참고). 동의를 거부하면 가입을 완료할 수 없어요. 사진은 선택 사항이에요.',
+                        style: TextStyle(fontSize: 12, height: 1.5),
+                      ),
                       CheckboxListTile(
                         value: terms,
                         onChanged: busy
@@ -394,7 +471,13 @@ class _AccountPageState extends State<AccountPage> {
                           busy || needsSetup && !(terms && privacy && age14)
                           ? null
                           : save,
-                      child: Text(needsSetup ? '프로필 설정 완료' : '변경 저장'),
+                      child: Text(
+                        needsSetup
+                            ? (account?['profile_created'] == true
+                                  ? '동의하고 계속'
+                                  : '가입 완료')
+                            : '변경 저장',
+                      ),
                     ),
                   ],
                   const SizedBox(height: 24),
@@ -403,37 +486,35 @@ class _AccountPageState extends State<AccountPage> {
                     style: TextStyle(fontSize: 13, height: 1.6),
                   ),
                   const SizedBox(height: 20),
-                  OutlinedButton(
-                    onPressed: busy
-                        ? null
-                        : () async {
-                            NearbyController.instance.stop();
-                            try {
-                              await Api.logout();
-                            } catch (_) {
-                              if (mounted)
-                                setState(
-                                  () => error = '로그아웃하지 못했어요. 다시 시도해 주세요.',
-                                );
-                            }
-                          },
-                    child: const Text('로그아웃'),
-                  ),
-                  TextButton(
-                    onPressed: busy ? null : reauthenticate,
-                    child: const Text('탈퇴 전 소셜 계정 다시 확인'),
-                  ),
-                  TextButton(
-                    onPressed: busy ? null : withdraw,
-                    child: const Text(
-                      '회원탈퇴',
-                      style: TextStyle(color: Colors.red),
+                  if (!signingUp) ...[
+                    OutlinedButton(
+                      onPressed: busy
+                          ? null
+                          : () async {
+                              NearbyController.instance.stop();
+                              try {
+                                await Api.logout();
+                              } catch (_) {
+                                if (mounted)
+                                  setState(
+                                    () => error = '로그아웃하지 못했어요. 다시 시도해 주세요.',
+                                  );
+                              }
+                            },
+                      child: const Text('로그아웃'),
                     ),
-                  ),
-                  const Text(
-                    '탈퇴는 소셜 로그인 후 10분 안에 진행할 수 있어요. 진행 중인 생성·검색 작업이 있으면 끝난 뒤 다시 시도해 주세요.',
-                    style: TextStyle(fontSize: 12, height: 1.6),
-                  ),
+                    TextButton(
+                      onPressed: busy ? null : withdraw,
+                      child: const Text(
+                        '회원탈퇴',
+                        style: TextStyle(color: Colors.red),
+                      ),
+                    ),
+                    const Text(
+                      '탈퇴 중 필요한 경우에만 계정을 다시 확인해요. 진행 중인 생성·검색 작업이 있으면 끝난 뒤 다시 시도해 주세요.',
+                      style: TextStyle(fontSize: 12, height: 1.6),
+                    ),
+                  ],
                 ],
                 if (busy) const LinearProgressIndicator(),
                 if (error != null)
