@@ -158,10 +158,11 @@ class _StudioState extends State<Studio> {
     if (nearbyDialogOpen) return;
     nearbyDialogOpen = true;
     try {
-      await showStudioDialog<void>(
-        context: context,
-        builder: (_) => const NearbyDialog(),
+      final login = await Navigator.push<bool>(
+        context,
+        MaterialPageRoute(builder: (_) => const NearbyPage()),
       );
+      if (login == true && mounted) await showAccount();
     } finally {
       nearbyDialogOpen = false;
     }

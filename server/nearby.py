@@ -1,4 +1,4 @@
-"""Opt-in, ephemeral proximity. No coordinates, identities or history leave this API.
+"""Opt-in, ephemeral radar. Only aggregate distance bands/directions leave this API.
 
 Single API process only. Never persist presence to DB/logs or share it with AI.
 """
@@ -25,6 +25,7 @@ class Presence:
     deadline: float
     seen: float
     position: tuple | None = None
+    accuracy: float = 250
     last_update: float = -math.inf
 
 
@@ -33,6 +34,31 @@ def distance(a,b):
     dlat=lat2-lat1;dlon=math.radians(b[1]-a[1])
     h=math.sin(dlat/2)**2+math.cos(lat1)*math.cos(lat2)*math.sin(dlon/2)**2
     return 6371000*2*math.asin(min(1,math.sqrt(h)))
+
+
+def sector(a,b):
+    """Clockwise eight-way compass: 0=N, 2=E, 4=S, 6=W. North is fixed."""
+    lat1,lat2=map(math.radians,(a[0],b[0]))
+    delta=math.radians(b[1]-a[1])
+    bearing=math.degrees(math.atan2(math.sin(delta)*math.cos(lat2),
+        math.cos(lat1)*math.sin(lat2)-math.sin(lat1)*math.cos(lat2)*math.cos(delta)))%360
+    return int((bearing+22.5)//45)%8
+
+
+def radar(position,accuracy,others):
+    bins={}
+    for other in others:
+        if other.position is None:continue
+        meters=distance(position,other.position)
+        if meters>1000:continue
+        band=0 if meters<=300 else 1 if meters<=600 else 2
+        # Both fixes have measurement error; rounding adds further uncertainty.
+        # Do not fabricate a bearing at close/coincident or low-confidence positions.
+        direction=None if meters<=max(150,math.hypot(accuracy,other.accuracy)+140) else sector(position,other.position)
+        key=(band,direction)
+        bins[key]=bins.get(key,0)+1
+    return [{'band':band,'direction':direction,'count':count}
+            for (band,direction),count in sorted(bins.items(),key=lambda item:(item[0][0],-1 if item[0][1] is None else item[0][1]))]
 
 
 class Registry:
@@ -71,12 +97,14 @@ class Registry:
             if now-entry.last_update<20:
                 raise HTTPException(429,'위치는 30초마다 확인해 주세요.')
             entry.position=(round(body.latitude,3),round(body.longitude,3))
+            entry.accuracy=body.accuracy
             entry.seen=now;entry.last_update=now
-            nearby=any(other!=owner and value.position is not None and distance(entry.position,value.position)<=1000
-                       for other,value in self.entries.items())
+            clusters=radar(entry.position,entry.accuracy,(value for other,value in self.entries.items() if other!=owner))
+            nearby=bool(clusters)
             notify=nearby and now-self.alerts.get(owner,-math.inf)>=COOLDOWN
             if notify:self.alerts[owner]=now
-            return {'nearby':nearby,'notify':notify,'remaining_seconds':max(0,int(entry.deadline-now))}
+            return {'nearby':nearby,'notify':notify,'remaining_seconds':max(0,int(entry.deadline-now)),
+                    'clusters':clusters,'count':sum(group['count'] for group in clusters)}
 
     def stop(self,owner,session,lease):
         with self.lock:
@@ -109,6 +137,7 @@ async def cleanup_loop():
 class Consent(BaseModel):
     model_config=ConfigDict(extra='forbid',strict=True)
     consent:bool
+    radar:bool=False
 
 
 class Lease(BaseModel):
@@ -150,6 +179,7 @@ def attach(app):
         owner,session=member(request)
         value=await body(request,Consent)
         if not value.consent:raise HTTPException(400,'위치 공유 동의가 필요해요.')
+        if not value.radar:raise HTTPException(409,'화면을 새로고침하고 거리·방향 공유 안내를 확인해 주세요.')
         return response(registry.start(owner,session))
 
     @app.post('/api/nearby/update')
