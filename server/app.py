@@ -20,6 +20,7 @@ from pydantic import BaseModel, Field, ConfigDict
 from PIL import Image
 
 from .gpu import Segmenter
+from .depth import DepthEstimator
 from .stickers import generate, normalized_image
 from . import notebook, asset_trash, admin
 from .db import Jsonb, connection
@@ -32,6 +33,7 @@ DATA = Path(os.getenv('GOODMORNING_DATA', str(ROOT / 'data'))).resolve()
 ENGINE = ROOT / 'sticker-engine'
 tasks = queue.Queue(maxsize=4)
 segmenter = Segmenter(DATA / 'models' / 'sam2')
+depth_estimator = DepthEstimator(DATA / 'models' / 'yolo-depth', segmenter.device_id)
 log = logging.getLogger('goodmorning')
 SAMPLES = {'pochita', '2026_11_24_08_15', '2026_11_24_08_16'}
 
@@ -106,7 +108,7 @@ def worker():
         try:
             def progress(number, message):
                 update_job(ident, 'running', number, message)
-            info = generate(path / 'source.png', path, segmenter, options, progress)
+            info = generate(path / 'source.png', path, segmenter, options, progress, depth_estimator)
             if options.get('goods'): info['goods'] = options['goods']
             with connection() as con:
                 con.execute('INSERT INTO assets VALUES(%s,%s,%s,%s,%s,%s)',
@@ -199,8 +201,8 @@ def automatic_session(request: Request):
 def health():
     gpu = segmenter.status()
     return {'status': 'ok', 'storage': 'local', 'gpu': gpu, 'engine': 'sam2-gaussian',
-            'photo_ready': gpu['model_ready'], 'queue_size': tasks.qsize(),
-            'pipeline': 'SAM 2.1 → single-photo Gaussian relief → glossy GLB'}
+            'photo_ready': gpu['model_ready'], 'depth_ready': depth_estimator.ready(), 'queue_size': tasks.qsize(),
+            'pipeline': 'SAM 2.1 → YOLO26n depth → single-photo Gaussian relief → glossy GLB'}
 
 
 @app.get('/api/assets')
@@ -341,7 +343,7 @@ def save_diary(ident: str, diary: Diary, request: Request):
 
 @app.get('/files/{ident}/{filename}')
 def file(ident: str, filename: str, request: Request):
-    if filename not in ('sticker.glb', 'sticker.png', 'sticker.json', 'sticker.ply', 'sticker.splat') or not ident.replace('_', '').replace('-', '').isalnum():
+    if filename not in ('sticker.glb', 'sticker.png', 'sticker.json', 'sticker.ply', 'sticker.splat', 'process.jpg') or not ident.replace('_', '').replace('-', '').isalnum():
         raise HTTPException(404)
     with connection() as con:
         if not accessible(con, 'asset', ident, request.state.owner):

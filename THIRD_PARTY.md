@@ -12,6 +12,7 @@
 - Three.js and its addons: upstream goodmorning-3d `viewer/vendor`, MIT. The license is retained in `server/scene/vendor/LICENSE-three.txt`.
 - Spark: upstream viewer vendor, MIT. Its license is retained alongside it; diary rendering uses the GLB surface.
 - SAM 2.1: https://github.com/facebookresearch/sam2 (Apache-2.0).
+- Depth: Ultralytics YOLO26n-depth, the published ONNX file from https://github.com/ultralytics/assets/releases/tag/v8.4.0 (`yolo26n-depth.onnx`, SHA-256 `6583ec12521a7e75eacb209db63393158c7e0e772cda9fdad8c8c0fe74af2a1e`). Its metadata states the AGPL-3.0 License (https://ultralytics.com/license); Ultralytics also offers an Enterprise License. The weights are downloaded locally by `scripts/setup_models.py` and are not committed. Serving stickers made with this model over a network falls under the AGPL-3.0 terms for the model, so check the license before public operation.
 - SAM 2.1 ONNX conversion: https://huggingface.co/onnx-community/sam2.1-hiera-tiny-ONNX, revision `814a066640debee5a91e70aa401fb8e17e030503`. Model weights are downloaded locally and are not committed.
 - Flutter / Dart packages: see `app/pubspec.lock` and the Flutter dependency licenses exposed by their respective packages.
 - Python runtime packages: see `server/requirements-windows-lock.txt`.

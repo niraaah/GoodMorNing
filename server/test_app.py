@@ -73,7 +73,10 @@ def test_photo_to_gaussian_glb_and_saved_diary(client):
     manifest=json.loads(glb[20:20+length])
     assert manifest['materials'][0]['extensions']['KHR_materials_clearcoat']['clearcoatFactor']==1
     assert c.get(f'/files/{ident}/sticker.ply').content.startswith(b'ply\n')
+    assert c.get(f'/files/{ident}/process.jpg').content.startswith(b'\xff\xd8')
     metadata=c.get(f'/files/{ident}/sticker.json').json()
+    # The test data folder has no depth model, so the silhouette relief is used and recorded.
+    assert metadata['depth']=='silhouette-distance' and '3_depth' not in metadata['process']['stages']
     assert metadata['gaussians']['count']>100
     assert metadata['max_height_mm']>0
     diary={'id':'persistent','title':'나의 기록','note':'hello','date':'2026-11-26','paper':'#fff9eb','placements':[

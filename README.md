@@ -57,7 +57,8 @@
 - 사진 업로드 후 사각형으로 굿즈 영역 선택
 - 모바일에서 사진 위 터치는 영역 선택이 우선이며 사진 밖에서 스크롤합니다. 유효한 영역을 선택하고 저장하면 창이 닫히고 에셋 화면에서 업로드·생성 상태를 표시합니다. 취소는 업로드를 시작하지 않고 창을 닫습니다.
 - **SAM 2.1**로 누끼 분리: Windows의 ONNX Runtime DirectML로 로컬 AMD GPU 사용
-- 누끼 이미지로 가우시안 입자와 볼록한 표면을 만들고 `.ply`, `.splat`, `.glb`, PNG 저장
+- 누끼 영역의 깊이를 **YOLO26n-depth**(ONNX, DirectML/CPU)로 추정하고, 가까운 부분일수록 높게 볼록한 표면을 만듭니다. 가우시안 입자와 함께 `.ply`, `.splat`, `.glb`, PNG로 저장합니다.
+- 만드는 단계마다 과정 사진을 남깁니다(`/files/{id}/process.jpg`). 아래 [스티커 처리 흐름](#스티커-처리-흐름) 참고
 - 생성 작업의 대기·진행률·실패 표시, 완료된 스티커를 에셋 보관함에 추가
 - 다이어리에 스티커와 폴라로이드 추가, 끌어서 이동, 크기·회전·순서 조절, 선택 항목 제거
 - 다이어리 탭은 원본 바인더 편집기를 사용합니다. 사진 메모·테이프·사진 추가/교체, 스티커 이동·크기·회전, 새 장 추가, 표지와 링 조작을 원본 UI에서 제공합니다. 이전 별도 편집기의 제목/메모/종이 색/PNG 내보내기 도구는 현재 화면에 노출하지 않습니다.
@@ -86,7 +87,8 @@ CORS 기본 허용 출처는 `https://niraaah.github.io`입니다. 다른 프론
 flowchart LR
   A[사진 + 선택 영역] --> B[SAM 2.1 / AMD DirectML]
   B --> C[누끼 이미지]
-  C --> D[윤곽 기반 볼록 높이 + Gaussian 표면]
+  C --> Y[YOLO26n-depth 깊이]
+  Y --> D[깊이 기반 볼록 높이 + Gaussian 표면]
   D --> E[Gaussian PLY / SPLAT]
   D --> F[유광 GLB + PNG]
   F --> G[에셋 보관함]
@@ -94,7 +96,13 @@ flowchart LR
   H --> I[PostgreSQL 자동 저장]
 ```
 
-**SAM 3D는 새 스티커 생성에 사용하지 않습니다.** 현재 사진 한 장의 보이는 면과 윤곽에서 높이를 만드는 **2.5D Gaussian relief** 구현입니다. 여러 시점의 사진으로 최적화하는 3D Gaussian Splatting 학습이나 보이지 않는 뒷면의 3D 복원은 포함하지 않습니다. 가우시안 표현은 PLY/SPLAT로 저장하며, 다이어리에서는 같은 표면을 GLB 메시로 베이크해 유광 반사를 표시합니다. 원본 저장소에서 가져온 기본 스티커 3개는 미리 생성된 샘플이며 출처는 메타데이터에 구분됩니다.
+![포치타 정면 사진으로 만든 볼록 스티커 과정](docs/sticker_process_pochita.jpg)
+
+1. 사진과 선택 영역 → 2. SAM 2.1 누끼 → 3. 누끼 안의 YOLO 깊이(가까울수록 붉은색) → 4. 칼선의 둥근 테두리 + 깊이 부조 높이 → 5. 유광 스티커. 서버는 단계가 끝날 때마다 `process/1_photo.jpg`~`5_sticker.jpg`를 저장하고, 마지막에 한 장으로 합친 `process.jpg`를 만듭니다. 단계별 소요 시간은 `sticker.json`의 `process.seconds`에 남습니다. 위 그림은 `sticker-engine/assets/pochita/sam3d_input/0001.jpg`를 이 PC의 CPU로 처리한 결과입니다(누끼 1.5초, 깊이 0.16초, 높이 0.17초, 스티커 0.06초).
+
+깊이는 사진 한 장에서 추정한 값(미터, 가까울수록 작음)입니다. 누끼 안에서 2~98% 범위를 0~1로 바꿔, 굿즈 긴 변의 5%까지 볼록하게 올립니다. 이 비율은 goodmorning-3d의 SAM 3D 샘플 스티커와 같습니다. 깊이 모델이 없으면 이전처럼 윤곽에서 떨어진 거리로 높이를 만들고, `sticker.json`의 `depth`에 `silhouette-distance`로 기록합니다. 모델은 `scripts/setup_models.py`가 Ultralytics 공개 릴리스(v8.4.0)에서 SHA-256을 확인해 받습니다.
+
+**SAM 3D는 새 스티커 생성에 사용하지 않습니다.** 현재 사진 한 장의 보이는 면과 윤곽·깊이에서 높이를 만드는 **2.5D Gaussian relief** 구현입니다. 여러 시점의 사진으로 최적화하는 3D Gaussian Splatting 학습이나 보이지 않는 뒷면의 3D 복원은 포함하지 않습니다. 가우시안 표현은 PLY/SPLAT로 저장하며, 다이어리에서는 같은 표면을 GLB 메시로 베이크해 유광 반사를 표시합니다. 원본 저장소에서 가져온 기본 스티커 3개는 미리 생성된 샘플이며 출처는 메타데이터에 구분됩니다.
 
 배경을 지우려면 사진에서 **굿즈를 감싸는 사각형을 직접 그려 주세요.** 전체 사진에 손이나 여러 물체가 함께 있으면 선택 영역에 따라 누끼 결과가 달라집니다. 이미 투명한 PNG는 알파를 사용합니다. ‘배경 포함’ 선택 시 사진 전체를 스티커로 만듭니다.
 
@@ -126,7 +134,9 @@ GoodMorNing/
 │  ├─ schema.sql              앱 표(에셋·작업·다이어리·페이지·휴지통·검색) 명세
 │  ├─ admin.py                /admin 조회 API (소유자 전용·읽기 전용)
 │  ├─ gpu.py                  GPU 선택·SAM 2 encoder/decoder 추론
-│  ├─ stickers.py             누끼 → 볼록 스티커 생성
+│  ├─ stickers.py             누끼 → 깊이 → 볼록 스티커 생성
+│  ├─ depth.py                YOLO26n-depth ONNX 깊이 추정
+│  ├─ process.py              단계별 과정 사진 기록
 │  ├─ gaussian.py             Gaussian 표면·PLY/SPLAT 내보내기
 │  ├─ access.py               외부 접속 키·세션 쿠키
 │  ├─ notebook.py             원본 다이어리 페이지·첨부 파일의 소유자별 저장
@@ -168,6 +178,7 @@ GoodMorNing/
 │  ├─ assets/<id>/             원본 사진, 스티커, 메타데이터
 │  ├─ notebook-files/         다이어리 첨부 사진·GLB (소유자별 접근)
 │  ├─ models/sam2/             SAM 2 ONNX 모델 약 155MB
+│  ├─ models/yolo-depth/       YOLO26n-depth ONNX 모델 약 21MB
 │  ├─ models/embeddinggemma-2/  고정 버전 사진 임베딩 모델
 │  ├─ search.local.json        쿠팡 키·검색 설정 (비공개)
 │  ├─ goods-cache/             공개 상품 임베딩 캐시

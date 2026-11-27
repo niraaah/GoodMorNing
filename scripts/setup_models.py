@@ -22,3 +22,21 @@ for file in files:
 (dest / 'manifest.json').write_text(json.dumps(manifest, indent=2), encoding='utf-8')
 print(json.dumps(manifest, indent=2))
 
+# Ultralytics YOLO26n-depth (AGPL-3.0) as published ONNX, pinned by release and SHA-256.
+depth = root / 'data' / 'models' / 'yolo-depth'
+depth.mkdir(parents=True, exist_ok=True)
+release = 'https://github.com/ultralytics/assets/releases/download/v8.4.0/yolo26n-depth.onnx'
+expected = '6583ec12521a7e75eacb209db63393158c7e0e772cda9fdad8c8c0fe74af2a1e'
+model = depth / 'yolo26n-depth.onnx'
+if not model.exists() or hashlib.sha256(model.read_bytes()).hexdigest() != expected:
+    print('Downloading yolo26n-depth.onnx', flush=True)
+    partial = model.with_suffix('.onnx.part')
+    urlretrieve(release, partial)
+    if hashlib.sha256(partial.read_bytes()).hexdigest() != expected:
+        partial.unlink()
+        raise SystemExit('YOLO depth model checksum mismatch.')
+    partial.replace(model)
+(depth / 'manifest.json').write_text(json.dumps({'model': 'yolo26n-depth', 'url': release, 'sha256': expected,
+                                                 'bytes': model.stat().st_size, 'license': 'AGPL-3.0'}, indent=2), encoding='utf-8')
+print('YOLO26n-depth ready:', model.name)
+
