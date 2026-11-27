@@ -518,6 +518,16 @@ class _StudioState extends State<Studio> {
       ),
     ),
   );
+  Widget headerDivider() => const ExcludeSemantics(
+    child: Padding(
+      padding: EdgeInsets.symmetric(horizontal: 3),
+      child: Text(
+        '|',
+        style: TextStyle(color: Color(0xffa5b8c0), fontSize: 14),
+      ),
+    ),
+  );
+
   Future<void> reconnect() async {
     if (loading) return;
     nearby.stop();
@@ -600,8 +610,8 @@ class _StudioState extends State<Studio> {
                             width:
                                 MediaQuery.sizeOf(
                                   context,
-                                ).width.clamp(314, 454) *
-                                .43,
+                                ).width.clamp(294, 454) *
+                                .34,
                             fit: BoxFit.contain,
                           ),
                         ),
@@ -624,14 +634,26 @@ class _StudioState extends State<Studio> {
                                 : ink,
                           ),
                         ),
+                        headerDivider(),
                         TextButton(
+                          style: TextButton.styleFrom(
+                            minimumSize: const Size(0, 44),
+                            padding: const EdgeInsets.symmetric(horizontal: 8),
+                            side: BorderSide.none,
+                          ),
                           onPressed: showAccount,
                           child: Text(
                             accountLabel,
                             style: const TextStyle(fontSize: 12),
                           ),
                         ),
+                        headerDivider(),
                         TextButton(
+                          style: TextButton.styleFrom(
+                            minimumSize: const Size(0, 44),
+                            padding: const EdgeInsets.symmetric(horizontal: 8),
+                            side: BorderSide.none,
+                          ),
                           onPressed: loading || health != null
                               ? null
                               : reconnect,

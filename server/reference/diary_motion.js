@@ -29,7 +29,7 @@ if (mountedBoard && demo) (() => {
   description.textContent = '동작 센서로 스티커의 빛 반사를 움직여요. 센서 값은 화면 효과에만 사용하며 서버로 보내거나 저장하지 않아요. 지금 켜지 않아도 다이어리를 꾸밀 수 있어요.';
   const actions = document.createElement('div'); actions.className = 'motion-permission-actions';
   const allow = document.createElement('button'); allow.type = 'button'; allow.className = 'button primary';
-  const switchMarkup='<span class="gm-material" data-icon="screen_rotation" aria-hidden="true"></span><span class="gm-motion-label">반짝임</span><span class="gm-switch-track" aria-hidden="true"><span class="gm-switch-thumb"></span></span>';
+  const switchMarkup='<span class="gm-material" data-icon="screen_rotation" aria-hidden="true"></span><span class="gm-switch-track" aria-hidden="true"><span class="gm-switch-thumb"></span></span>';
   for (const control of [gyro,allow]) {
     control.classList.add('gm-motion-control'); control.innerHTML=switchMarkup;
     control.setAttribute('role','switch'); control.setAttribute('aria-checked','false');
