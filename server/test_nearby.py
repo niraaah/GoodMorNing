@@ -28,7 +28,7 @@ def headers(owner='a',session=None):
 
 
 def start(client,owner='a',session=None):
-    response=client.post('/api/nearby/start',json={'consent':True},headers=headers(owner,session))
+    response=client.post('/api/nearby/start',json={'consent':True,'radar':True},headers=headers(owner,session))
     assert response.status_code==200
     return response.json()['lease']
 
@@ -51,13 +51,15 @@ def test_explicit_consent_and_bounded_body(service):
     assert not registry.entries
 
 
-def test_mutual_opt_in_only_boolean_no_identity_or_location(service):
+def test_mutual_opt_in_only_coarse_groups_no_identity_or_location(service):
     client,registry,now=service
     a=start(client);b=start(client,'b')
     assert update(client,a).json()['nearby'] is False  # b has not supplied location
     result=update(client,b,'b',latitude=0.004).json()
     assert result['nearby'] is True and result['notify'] is True
-    assert set(result)=={'nearby','notify','remaining_seconds'}
+    assert set(result)=={'nearby','notify','remaining_seconds','clusters','count'}
+    assert result['count']==1
+    assert result['clusters']==[{'band':1,'direction':4,'count':1}]
     assert registry.entries['a'].position==(0.0,0.0)
     now[0]+=30
     result=update(client,a)
@@ -117,7 +119,7 @@ def test_rate_limit_and_cooldown_survive_restart_of_sharing(service):
     client,registry,now=service;a=start(client);b=start(client,'b')
     update(client,a);assert update(client,b,'b').json()['notify'] is True
     assert update(client,b,'b').status_code==429
-    assert client.post('/api/nearby/start',json={'consent':True},headers=headers('b')).status_code==429
+    assert client.post('/api/nearby/start',json={'consent':True,'radar':True},headers=headers('b')).status_code==429
     now[0]+=30
     client.post('/api/nearby/stop',json={'lease':b},headers=headers('b'))
     b=start(client,'b')
@@ -138,7 +140,7 @@ def test_old_tab_stop_does_not_delete_new_share_and_logout_removes(service):
 def test_capacity_is_bounded_and_expired_memory_is_removed(service,monkeypatch):
     client,registry,now=service;monkeypatch.setattr(nearby,'CAPACITY',2)
     start(client);start(client,'b')
-    assert client.post('/api/nearby/start',json={'consent':True},headers=headers('c')).status_code==503
+    assert client.post('/api/nearby/start',json={'consent':True,'radar':True},headers=headers('c')).status_code==503
     now[0]+=901;registry.purge()
     assert not registry.entries and not registry.starts and not registry.alerts
     assert start(client,'c')
@@ -151,3 +153,49 @@ def test_same_owner_never_detects_itself(service):
 
 def test_antimeridian_distance_is_correct():
     assert nearby.distance((0,179.999),(0,-179.999))<300
+
+
+
+def test_old_boolean_consent_never_enables_distance_direction(service):
+    client,registry,_=service
+    response=client.post('/api/nearby/start',json={'consent':True},headers=headers())
+    assert response.status_code==409 and not registry.entries
+
+
+@pytest.mark.parametrize('point,expected',[
+    ((.006,0),0),((.0047,.0047),1),((0,.006),2),((-.0047,.0047),3),
+    ((-.006,0),4),((-.0047,-.0047),5),((0,-.006),6),((.0047,-.0047),7)])
+def test_compass_uses_fixed_north_and_eight_sectors(point,expected):
+    assert nearby.sector((0,0),point)==expected
+    other=nearby.Presence('synthetic','synthetic',100,0,position=point,accuracy=30)
+    assert nearby.radar((0,0),30,[other])==[{'band':2,'direction':expected,'count':1}]
+
+
+def test_distance_bands_coincident_fixes_and_accuracy_suppress_false_direction():
+    points=[(0,0),(.001,0),(.0025,0),(.0045,0),(.008,0),(.02,0)]
+    others=[nearby.Presence('test','test',100,0,position=point,accuracy=30) for point in points]
+    result=nearby.radar((0,0),30,others)
+    assert result==[{'band':0,'direction':None,'count':2}, {'band':0,'direction':0,'count':1},
+                    {'band':1,'direction':0,'count':1},{'band':2,'direction':0,'count':1}]
+    uncertain=nearby.Presence('test','test',100,0,position=(.0036,0),accuracy=250)
+    assert nearby.radar((0,0),250,[uncertain])==[{'band':1,'direction':None,'count':1}]
+    assert nearby.sector((0,179.998),(0,-179.998))==2
+    assert nearby.sector((0,-179.998),(0,179.998))==6
+
+
+def test_groups_are_aggregated_and_do_not_return_tracking_identifiers(service):
+    client,_,now=service;a=start(client);b=start(client,'b');c=start(client,'c')
+    update(client,a,latitude=0.0,longitude=0.0)
+    update(client,b,'b',latitude=.004,longitude=0.0)
+    update(client,c,'c',latitude=.004,longitude=0.0)
+    now[0]+=30
+    result=update(client,a,latitude=0.0,longitude=0.0).json()
+    assert result['count']==2 and result['clusters']==[{'band':1,'direction':0,'count':2}]
+    assert set(result['clusters'][0])=={'band','direction','count'}
+    assert all(secret not in json.dumps(result) for secret in (a,b,c))
+    client.post('/api/nearby/stop',json={'lease':b},headers=headers('b'))
+    now[0]+=30
+    assert update(client,a,latitude=0.0,longitude=0.0).json()['count']==1
+    now[0]+=31
+    result=update(client,a,latitude=0.0,longitude=0.0).json()
+    assert result['count']==0 and result['clusters']==[]
