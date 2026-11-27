@@ -219,7 +219,10 @@ class _AccountDialogState extends State<AccountDialog> {
       actions: [
         TextButton(
           onPressed: busy ? null : () => Navigator.pop(context),
-          child: const Text('닫기'),
+          child: const Tooltip(
+            message: '닫기',
+            child: Icon(Icons.close, semanticLabel: '닫기'),
+          ),
         ),
       ],
     );

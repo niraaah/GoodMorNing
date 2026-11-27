@@ -13,6 +13,7 @@ def adapt(html):
     photos = (reference / 'diary_photos.js').read_text(encoding='utf-8')
     photo_css = (reference / 'diary_photos.css').read_text(encoding='utf-8')
     photo_css += '\n' + (reference / 'diary_permissions.css').read_text(encoding='utf-8')
+    photo_css += '\n' + (reference / 'diary_controls.css').read_text(encoding='utf-8')
     html = html.replace('</head>', '<style>' + photo_css + '</style>\n</head>', 1)
     html = html.replace('const homeLayoutVersion = 3;', photos + '\nconst homeLayoutVersion = 3;', 1)
     html = html.replace("    caption.textContent = photo.caption ?? (index === storyIndex && !newDiaryPage ? story.title : '');\n    caption.title = caption.textContent;", "    renderPolaroidCaption(card, photo, index, blank);")
@@ -71,4 +72,11 @@ def adapt(html):
     html = html.replace('  elements.edit.disabled = false;\n  if (newDiaryPage && !pageExists) elements.edit.click();', '''  elements.edit.disabled = Boolean(window.goodmorningReadFailed);
   if (newDiaryPage && !pageExists && !window.goodmorningReadFailed) elements.edit.click();
   if (demo && !visitingDiary && !window.goodmorningReadFailed) window.goodmorningBridge.markReady();''')
+    # App-owned controls; the pinned prototype is unchanged.
+    import re
+    def icon_button(match):
+        attrs=match.group(1).replace('class="button"','class="button gm-icon-button"')
+        return '<button'+attrs+' aria-label="닫기" title="닫기"><span class="gm-material" data-icon="close" aria-hidden="true"></span></button>'
+    html=re.sub(r'<button([^>]*?)>닫기</button>',icon_button,html)
+    html=html.replace('<button class="button" id="edit" type="button">편집</button>', '<button class="button gm-icon-button" id="edit" type="button" aria-label="다이어리 편집" title="편집"><span class="gm-material" data-icon="edit" aria-hidden="true"></span></button>')
     return repair(html)

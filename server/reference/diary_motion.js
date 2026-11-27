@@ -29,7 +29,12 @@ if (mountedBoard && demo) (() => {
   description.textContent = '동작 센서로 스티커의 빛 반사를 움직여요. 센서 값은 화면 효과에만 사용하며 서버로 보내거나 저장하지 않아요. 지금 켜지 않아도 다이어리를 꾸밀 수 있어요.';
   const actions = document.createElement('div'); actions.className = 'motion-permission-actions';
   const allow = document.createElement('button'); allow.type = 'button'; allow.className = 'button primary';
-  allow.textContent = '반짝임 켜기';
+  const switchMarkup='<span class="gm-material" data-icon="screen_rotation" aria-hidden="true"></span><span class="gm-motion-label">반짝임</span><span class="gm-switch-track" aria-hidden="true"><span class="gm-switch-thumb"></span></span>';
+  for (const control of [gyro,allow]) {
+    control.classList.add('gm-motion-control'); control.innerHTML=switchMarkup;
+    control.setAttribute('role','switch'); control.setAttribute('aria-checked','false');
+    control.removeAttribute('aria-pressed'); control.setAttribute('aria-describedby','tilt-status');
+  }
   const later = document.createElement('button'); later.type = 'button'; later.className = 'button'; later.textContent = '나중에';
   actions.append(allow,later); intro.append(title,description,actions);
   document.getElementById('post-view').before(intro);
@@ -46,10 +51,12 @@ if (mountedBoard && demo) (() => {
     manual.setAttribute('aria-pressed', String(manualOn));
     gyro.hidden = state === 'unavailable';
     gyro.disabled = requesting; allow.disabled = requesting; later.disabled = requesting;
-    gyro.textContent = enabled && ['active','checking'].includes(state) ? '반짝임 끄기' : state === 'denied' ? '권한 확인' : '자이로 켜기';
-    gyro.title = enabled ? '스티커 반짝임 움직임 끄기' : '휴대폰 기울기로 스티커 반짝임 켜기';
-    gyro.setAttribute('aria-label', gyro.title);
-    gyro.setAttribute('aria-pressed', String(state === 'active' && enabled));
+    for (const control of [gyro,allow]) {
+      control.title = state === 'denied' ? '자이로 반짝임 권한 다시 확인' : enabled ? '자이로 반짝임 끄기' : '자이로 반짝임 켜기';
+      control.setAttribute('aria-label',control.title);
+      control.setAttribute('aria-checked',String(state === 'active' && enabled));
+      control.setAttribute('aria-busy',String(requesting || state === 'checking'));
+    }
     board.style.touchAction = manualOn ? 'none' : '';
   }
   function stopManual() { manualOn = false; manualX = manualY = 0; drag = null; updateControls(); }
@@ -113,7 +120,7 @@ if (mountedBoard && demo) (() => {
     state = 'denied'; enabled = false; clearTimeout(timer); stopManual();
     window.removeEventListener('deviceorientation',move);
     targetX = targetY = 0; scheduleBoard(); remember('denied'); intro.hidden = true;
-    message('동작 센서가 허용되지 않았어요. 다이어리는 그대로 사용할 수 있어요. 켜려면 브라우저 사이트 설정에서 센서를 허용한 뒤 ‘권한 확인’을 눌러 주세요.');
+    message('동작 센서가 허용되지 않았어요. 다이어리는 그대로 사용할 수 있어요. 켜려면 브라우저 사이트 설정에서 센서를 허용한 뒤 반짝임 스위치를 다시 켜 주세요.');
   }
   async function begin(fromClick = false) {
     if (disposed || requesting) return;
@@ -124,7 +131,7 @@ if (mountedBoard && demo) (() => {
     if (!Orientation) { state = 'idle'; intro.hidden = true; unavailable(); return; }
     if (typeof Orientation.requestPermission === 'function' && !fromClick) {
       state = 'permission'; updateControls();
-      message('‘자이로 켜기’를 눌러 이 화면의 동작 센서 권한을 확인해 주세요.'); return;
+      message('반짝임 스위치를 켜서 이 화면의 동작 센서 권한을 확인해 주세요.'); return;
     }
     const current = ++attempt; requesting = true; updateControls();
     try {
@@ -154,7 +161,7 @@ if (mountedBoard && demo) (() => {
     clearTimeout(timer); window.removeEventListener('deviceorientation',move);
     targetX = targetY = 0; origin = null; intro.hidden = true; remember(choice);
     stopManual(); scheduleBoard();
-    message(choice === 'later' ? '나중에 위쪽 ‘자이로 켜기’를 누르면 반짝임을 켤 수 있어요.' : '반짝임 움직임을 껐어요. 위쪽 ‘자이로 켜기’로 다시 켤 수 있어요.');
+    message(choice === 'later' ? '나중에 위쪽 반짝임 스위치를 켜면 반짝임을 켤 수 있어요.' : '반짝임 움직임을 껐어요. 위쪽 반짝임 스위치로 다시 켤 수 있어요.');
   }
   allow.addEventListener('click', () => { void begin(true); });
   later.addEventListener('click', () => { turnOff('later'); gyro.focus({preventScroll:true}); });
@@ -189,9 +196,10 @@ if (mountedBoard && demo) (() => {
   });
   function readingMode(active) {
     document.body.classList.toggle('reading-mode',active); reading.setAttribute('aria-pressed',String(active));
+    reading.innerHTML='<span class="gm-material" data-icon="'+(active?'close':'fullscreen')+'" aria-hidden="true"></span>';
     reading.title = active ? '전체화면 닫기' : '전체화면 켜기'; reading.setAttribute('aria-label',reading.title);
   }
-  reading.hidden=false;
+  reading.classList.add('gm-icon-button'); readingMode(false); reading.hidden=false;
   reading.addEventListener('click',async()=>{
     const active=!document.body.classList.contains('reading-mode'); readingMode(active);
     try { if(active) await document.documentElement.requestFullscreen?.(); else if(document.fullscreenElement) await document.exitFullscreen?.(); } catch {}
@@ -212,7 +220,7 @@ if (mountedBoard && demo) (() => {
   if (!Orientation || !window.isSecureContext) void begin();
   else if (preference === 'on') void begin();
   else if (preference === 'denied') denied();
-  else if (preference) message('위쪽 ‘자이로 켜기’를 누르면 스티커 반짝임을 켤 수 있어요.');
+  else if (preference) message('위쪽 반짝임 스위치를 켜면 스티커 반짝임을 켤 수 있어요.');
   else if (!visitingDiary) intro.hidden = false;
-  else message('위쪽 ‘자이로 켜기’로 스티커 반짝임을 체험할 수 있어요.');
+  else message('위쪽 반짝임 스위치로 스티커 반짝임을 체험할 수 있어요.');
 })();

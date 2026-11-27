@@ -201,7 +201,7 @@ function createDiaryObjectEditor() {
   const picker = document.createElement('dialog'); picker.className = 'object-swap-dialog';
   picker.setAttribute('aria-label', '교체할 스티커 선택');
   const heading = document.createElement('h2'); heading.textContent = '어떤 스티커로 바꿀까요?';
-  const close = document.createElement('button'); close.type = 'button'; close.textContent = '닫기';
+  const close = document.createElement('button'); close.type = 'button'; close.className='button gm-icon-button'; close.title='닫기'; close.setAttribute('aria-label','닫기'); close.innerHTML='<span class="gm-material" data-icon="close" aria-hidden="true"></span>';
   close.addEventListener('click', () => picker.close());
   const result = document.createElement('p'); result.setAttribute('role','status');
   const choices = document.createElement('div'); choices.className = 'object-swap-grid';

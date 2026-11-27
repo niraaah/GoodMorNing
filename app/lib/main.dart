@@ -563,7 +563,10 @@ class _StudioState extends State<Studio> {
           actions: [
             TextButton(
               onPressed: busy ? null : () => Navigator.pop(ctx),
-              child: const Text('닫기'),
+              child: const Tooltip(
+                message: '닫기',
+                child: Icon(Icons.close, semanticLabel: '닫기'),
+              ),
             ),
             FilledButton(
               onPressed: busy
@@ -694,9 +697,7 @@ class _StudioState extends State<Studio> {
                           ),
                           padding: const EdgeInsets.all(4),
                           icon: Icon(
-                            nearby.active
-                                ? Icons.location_on
-                                : Icons.location_on_outlined,
+                            nearby.active ? Icons.map : Icons.map_outlined,
                             size: 20,
                             color: nearby.active
                                 ? const Color(0xff168264)
@@ -917,7 +918,10 @@ class _StudioState extends State<Studio> {
             ),
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('닫기'),
+            child: const Tooltip(
+              message: '닫기',
+              child: Icon(Icons.close, semanticLabel: '닫기'),
+            ),
           ),
           FilledButton.icon(
             onPressed: () {
