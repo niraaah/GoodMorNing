@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'dart:js_interop';
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:http/http.dart' as http;
@@ -13,7 +15,58 @@ class Api {
   static bool get configured => base.isNotEmpty || !hosted;
   static Map<String, String> get headers =>
       token.isEmpty ? {} : {'Authorization': 'Bearer $token'};
-  static void initialize() {
+  static void clearAfterWithdrawal() {
+    web.window.localStorage.setItem('goodmorning-clear-browser', '1');
+    token = '';
+    _images.clear();
+    web.window.sessionStorage.removeItem('goodmorning-token');
+    web.window.sessionStorage.removeItem('goodmorning-oauth');
+  }
+
+  static Future<void> initialize() async {
+    if (web.window.localStorage.getItem('goodmorning-clear-browser') == '1') {
+      for (final storage in [
+        web.window.localStorage,
+        web.window.sessionStorage,
+      ]) {
+        final keys = <String>[];
+        for (var i = 0; i < storage.length; i++) {
+          final key = storage.key(i);
+          if (key != null &&
+              key.startsWith('goodmorning-') &&
+              key != 'goodmorning-clear-browser')
+            keys.add(key);
+        }
+        for (final key in keys) {
+          storage.removeItem(key);
+        }
+      }
+      for (final database in [
+        'goodmorning-diary-demo',
+        'goodmorning-3d-post',
+        'goodmorning-sticker-library',
+      ]) {
+        final completed = Completer<void>();
+        final request = web.window.indexedDB.deleteDatabase(database);
+        request.addEventListener(
+          'success',
+          ((web.Event _) {
+            if (!completed.isCompleted) completed.complete();
+          }).toJS,
+        );
+        void failed(web.Event _) {
+          if (!completed.isCompleted)
+            completed.completeError(
+              Exception('브라우저 저장 정보 삭제가 지연되고 있어요. 다른 굿모닝 탭을 모두 닫고 새로고침해 주세요.'),
+            );
+        }
+
+        request.addEventListener('error', failed.toJS);
+        request.addEventListener('blocked', failed.toJS);
+        await completed.future.timeout(const Duration(seconds: 15));
+      }
+    }
+    web.window.localStorage.removeItem('goodmorning-clear-browser');
     base = web.window.localStorage.getItem('goodmorning-api') ?? base;
     token = web.window.sessionStorage.getItem('goodmorning-token') ?? '';
     final fragment = Uri.splitQueryString(Uri.base.fragment);
@@ -54,7 +107,7 @@ class Api {
     }.where((value) => value.isNotEmpty)) {
       configure(address, candidate);
       final response = await http
-          .get(uri('/api/health'), headers: headers)
+          .get(uri('/auth/me'), headers: headers)
           .timeout(const Duration(seconds: 20));
       if (response.statusCode == 200) {
         _automaticReady = true;
@@ -99,7 +152,14 @@ class Api {
     _explicitConnection = true;
   }
 
-  static Future<void> socialLogin(String provider, bool keepGuest) async {
+  static Future<void> socialLogin(
+    String provider,
+    bool keepGuest,
+    String policyVersion,
+    bool terms,
+    bool privacy,
+    bool age14,
+  ) async {
     if (!['google', 'kakao'].contains(provider))
       throw Exception('지원하지 않는 로그인 방식이에요.');
     final providers = await get('/auth/providers');
@@ -108,6 +168,10 @@ class Api {
       throw Exception('공개 웹 주소에서 로그인을 이용해 주세요.');
     final result = await post('/auth/$provider/start', {
       'keep_guest': keepGuest,
+      'policy_version': policyVersion,
+      'terms': terms,
+      'privacy': privacy,
+      'age14': age14,
     });
     web.window.sessionStorage.setItem(
       'goodmorning-oauth',

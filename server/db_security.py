@@ -5,12 +5,12 @@ from . import db
 
 API_TABLES = ('ownership','assets','jobs','diaries','notebook_pages','notebook_files','asset_trash',
     'goods_searches','asset_product_links','app_users','app_owner_bindings','auth_identities',
-    'user_notebooks','diary_pages','diary_page_items','account_profiles','account_sessions','oauth_attempts')
+    'user_notebooks','diary_pages','diary_page_items','account_profiles','account_sessions','oauth_attempts','retired_guest_owners')
 CATALOG_TABLES = ('catalog_products','catalog_variants','catalog_malls','catalog_offers',
     'catalog_offer_history','catalog_collect_jobs','catalog_raw_listings','catalog_query_cache',
     'catalog_query_offers','catalog_images','catalog_embeddings')
 SEARCH_WRITE_TABLES = tuple(t for t in CATALOG_TABLES if t not in ('catalog_products','catalog_variants'))
-PRIVATE_AUTH = ('auth_identities','account_profiles','account_sessions','oauth_attempts')
+PRIVATE_AUTH = ('auth_identities','account_profiles','account_sessions','oauth_attempts','retired_guest_owners')
 RLS_TABLES = ('ownership','assets','jobs','diaries','notebook_pages','notebook_files','asset_trash',
               'goods_searches','asset_product_links','user_notebooks','diary_pages','diary_page_items')
 

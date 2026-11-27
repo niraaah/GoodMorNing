@@ -3,6 +3,7 @@ import hashlib
 import hmac
 import secrets
 import re
+import time
 from pathlib import Path
 from fastapi.responses import HTMLResponse
 
@@ -29,18 +30,26 @@ def authorized(request, key):
 
 def guest_token(key):
     ident = secrets.token_hex(16)
-    signature = hmac.new(key.encode(), ('guest:' + ident).encode(), hashlib.sha256).hexdigest()
-    return f'guest.{ident}.{signature}'
+    issued=str(int(time.time()))
+    signature = hmac.new(key.encode(), ('guest:' + issued + ':' + ident).encode(), hashlib.sha256).hexdigest()
+    return f'guest.{issued}.{ident}.{signature}'
 
 
 def guest_owner(request, key):
     token = request.headers.get('authorization', '').removeprefix('Bearer ')
-    match = re.fullmatch(r'guest\.([a-f0-9]{32})\.([a-f0-9]{64})', token)
-    if not match:
-        return None
-    ident, signature = match.groups()
-    expected = hmac.new(key.encode(), ('guest:' + ident).encode(), hashlib.sha256).hexdigest()
-    return 'guest-' + ident if hmac.compare_digest(signature, expected) else None
+    match = re.fullmatch(r'guest\.([0-9]{10})\.([a-f0-9]{32})\.([a-f0-9]{64})', token)
+    if match:
+        issued,ident,signature=match.groups()
+        if not -60<=time.time()-int(issued)<30*86400:return None
+        message='guest:'+issued+':'+ident
+    else:
+        match=re.fullmatch(r'guest\.([a-f0-9]{32})\.([a-f0-9]{64})',token)
+        # Transition deadline for old non-expiring visitor links: 2026-12-27 UTC.
+        if not match or time.time()>=1798329600:return None
+        ident,signature=match.groups();message='guest:'+ident
+    expected=hmac.new(key.encode(),message.encode(),hashlib.sha256).hexdigest()
+    return 'guest-'+ident if hmac.compare_digest(signature,expected) else None
+
 
 def connect_page():
     return HTMLResponse('''<!doctype html><html lang="ko"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>굿모닝에 들어가기</title>

@@ -13,7 +13,7 @@ docker start goodmorning-postgres | Out-Null
 if ($LASTEXITCODE -ne 0) { throw 'PostgreSQL is not available. Start Docker Desktop, then run scripts\setup-postgres.ps1.' }
 & (Join-Path $PSScriptRoot 'start-search.ps1')
 if ($Foreground) {
-  & $pythonPath -m uvicorn server.app:app --host 127.0.0.1 --port $Port
+  & $pythonPath -m uvicorn server.app:app --host 127.0.0.1 --port $Port --no-access-log
   exit $LASTEXITCODE
 }
 try {
@@ -23,7 +23,7 @@ try {
 } catch [System.Net.Http.HttpRequestException] {
 } catch [System.Threading.Tasks.TaskCanceledException] {
 }
-$serverProcess = Start-Process -FilePath $pythonPath -ArgumentList @('-m','uvicorn','server.app:app','--host','127.0.0.1','--port',"$Port") -WorkingDirectory $projectRoot -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $logsPath 'server.out.log') -RedirectStandardError (Join-Path $logsPath 'server.err.log')
+$serverProcess = Start-Process -FilePath $pythonPath -ArgumentList @('-m','uvicorn','server.app:app','--host','127.0.0.1','--port',"$Port",'--no-access-log') -WorkingDirectory $projectRoot -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $logsPath 'server.out.log') -RedirectStandardError (Join-Path $logsPath 'server.err.log')
 $serverProcess.Id | Set-Content -LiteralPath (Join-Path $logsPath 'server.pid')
 Write-Output "Server PID: $($serverProcess.Id)"
 Write-Output "http://127.0.0.1:$Port"

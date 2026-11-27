@@ -8,7 +8,8 @@ from fastapi.testclient import TestClient
 import pytest
 
 from server import social_auth as auth
-from server.access import guest_token
+from server.access import guest_token, guest_owner
+from server import db, account_policy
 from server.test_diary_store import con  # isolated temporary database fixture
 
 
@@ -34,6 +35,12 @@ def test_sessions_expire_and_revoke(con, column):
     # Column is a fixed parametrized test literal, never user input.
     con.execute(f"UPDATE account_sessions SET {column}=now()-interval '2 days'")
     assert auth.member_session(con, token) is None
+
+
+@pytest.fixture(autouse=True)
+def isolated_data(tmp_path, monkeypatch):
+    monkeypatch.setenv('GOODMORNING_ADMIN_DATABASE_URL', db.admin_url())
+    monkeypatch.setattr(db, 'data_dir', lambda: tmp_path)
 
 
 @pytest.fixture
@@ -68,7 +75,7 @@ def test_local_invalid_bearer_never_becomes_admin(client):
 def test_promoted_guest_is_revoked_and_logout_revokes_session(con, client, monkeypatch):
     testclient, key = client
     visitor = guest_token(key)
-    owner = 'guest-' + visitor.split('.')[1]
+    owner = guest_owner(Request({'type':'http','headers':[(b'authorization',('Bearer '+visitor).encode())]}),key)
     session, _ = auth.complete_identity(con, 'google', 'user', 'Name', owner)
     request = Request({'type':'http', 'headers':[(b'authorization', ('Bearer '+visitor).encode())]})
     assert auth.identify(request, key, True) == (None, None)
@@ -85,8 +92,8 @@ def test_promoted_guest_is_revoked_and_logout_revokes_session(con, client, monke
 @pytest.mark.parametrize('provider', ['google', 'kakao'])
 def test_oauth_state_origin_provider_verifier_expiry_and_replay(con, client, monkeypatch, provider):
     testclient, _ = client
-    assert testclient.post('/auth/google/start', json={}, headers={'Origin':'https://evil.example'}).status_code == 400
-    started = testclient.post(f'/auth/{provider}/start', json={}).json()
+    assert testclient.post('/auth/google/start', json=dict(terms=True,privacy=True,age14=True,policy_version=account_policy.VERSION), headers={'Origin':'https://evil.example'}).status_code == 400
+    started = testclient.post(f'/auth/{provider}/start', json=dict(terms=True,privacy=True,age14=True,policy_version=account_policy.VERSION)).json()
     body = dict(state=started['state'], verifier=started['verifier'], code='isolated-test-code')
     calls = []
     class FakeClient:
@@ -114,7 +121,7 @@ def test_oauth_state_origin_provider_verifier_expiry_and_replay(con, client, mon
     assert result.headers['cache-control'] == 'no-store'
     assert testclient.post(f'/auth/{provider}/complete', json=body).status_code == 400
     assert len(calls) == 1
-    expired = testclient.post(f'/auth/{provider}/start', json={}).json()
+    expired = testclient.post(f'/auth/{provider}/start', json=dict(terms=True,privacy=True,age14=True,policy_version=account_policy.VERSION)).json()
     con.execute("UPDATE oauth_attempts SET expires_at=now()-interval '1 second'")
     assert testclient.post(f'/auth/{provider}/complete', json={**body,'state':expired['state'],'verifier':expired['verifier']}).status_code == 400
     assert len(calls) == 1
@@ -122,7 +129,7 @@ def test_oauth_state_origin_provider_verifier_expiry_and_replay(con, client, mon
 
 def test_failed_exchange_consumes_state(client, monkeypatch):
     testclient, _ = client
-    start = testclient.post('/auth/google/start', json={}).json()
+    start = testclient.post('/auth/google/start', json=dict(terms=True,privacy=True,age14=True,policy_version=account_policy.VERSION)).json()
     def failure(**kwargs): raise auth.httpx.ConnectError('isolated failure')
     monkeypatch.setattr(auth.httpx, 'Client', failure)
     body = {k:start[k] for k in ('state','verifier')} | {'code':'isolated-code'}

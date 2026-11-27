@@ -342,3 +342,24 @@ cd app
 ## 소셜 로그인 설정
 
 구글·카카오 로그인만 지원합니다. 키를 넣을 로컬 파일과 개발자 콘솔 등록 주소는 [설정 안내](docs/social-login.md)를 확인하세요. 실제 키는 `data/auth.local.json`에만 넣으며 Git에는 포함하지 않습니다. 키 등록 전에는 로그인 버튼이 준비 중으로 표시됩니다.
+
+
+## 첫 로그인 프로필과 계정설정
+
+첫 로그인에서 닉네임을 정하고 선택적으로 프로필 사진을 올립니다. 사진 없이 기본 이미지로 가입할 수 있으며, 구글/카카오의 실명·이메일·사진을 회원 정보로 가져오지 않습니다. 이후 상단 내 계정에서 사진·닉네임 수정, 로그아웃, 회원탈퇴를 할 수 있습니다. 탈퇴는 최근 소셜 로그인, 확인 문구와 삭제 범위 확인을 거칩니다.
+
+운영자는 **Team GoodGeeks**, 개인정보 문의는 **goodgeeks.info@gmail.com**입니다. 로그인 전·계정설정에서 [이용약관](docs/TERMS.md)과 [개인정보 처리방침](docs/PRIVACY.md)을 볼 수 있습니다. 현재 코드에 적용한 보호 조치와 외부 인프라 경유·보존 기간을 기재했고, 국외 이전·위치 기능 등 확정이 필요한 운영 사항은 [공개 운영 전 확인](docs/LEGAL_REVIEW.md)에 구분했습니다.
+
+기존 설치의 계정 스키마 갱신:
+
+```powershell
+.\scripts\stop.ps1 -ServerOnly
+.\.venv\Scripts\python.exe scripts\migrate_accounts.py
+.\scripts\start.ps1
+```
+
+진행 중인 작업이 없어야 하며, 백업을 임시 DB에 실제 복원하고 기존 열의 값 보존을 검사한 뒤 추가 스키마와 제한 권한을 적용합니다. 런타임은 관리자 DB 권한을 사용하지 않습니다. 새 설치는 기존 setup-postgres 절차에 포함됩니다.
+
+관련 파일: `app/lib/account_page.dart`(프로필·설정·법적 안내), `server/accounts.py`(프로필·탈퇴·재시도), `server/account_policy.py`(문서 버전), `server/auth_schema.sql`(프로필·동의·삭제 상태), `scripts/migrate_accounts.py`(안전 이관), `server/test_accounts.py`(합성 계정 검증). 공개 Git에는 키·DB·사진·백업을 포함하지 않습니다.
+
+관리 DB 백업은 생성 후 7일 기준으로 정리하며 PC가 꺼졌다면 다음 시작에 정리합니다. `data/privacy-erasure/`는 복원 시 재접속 방지·삭제 재시도용 최소 기록으로 최대 31일 유지하며, 삭제 실패가 남아 있으면 완료까지 보관합니다. 복구 작업에서 이 폴더를 과거 DB와 함께 되돌리거나 지우지 마세요. 수동/OS 백업과 이전 SQLite 원본은 별도 파기 점검 대상입니다. 방문자 토큰은 30일 유효하며 이전 형식은 2026-12-27 UTC에 종료됩니다.

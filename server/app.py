@@ -24,7 +24,7 @@ from PIL import Image
 from .gpu import Segmenter
 from .depth import DepthEstimator
 from .stickers import generate, normalized_image
-from . import notebook, asset_trash, admin, social_auth, nearby
+from . import notebook, asset_trash, admin, social_auth, nearby, accounts, account_policy
 from .db import Jsonb, connection, owner_scope, current_owner
 from .goods import api as goods_api
 from .goods import catalog
@@ -134,15 +134,20 @@ def worker():
 async def lifespan(app):
     with owner_scope('private'):
         initialize()
+    accounts.initialize()
     thread = threading.Thread(target=worker, daemon=True, name='sticker-worker')
     thread.start()
     cleanup=asyncio.create_task(nearby.cleanup_loop())
+    account_cleanup=asyncio.create_task(accounts.cleanup_loop())
     try:
         yield
     finally:
         cleanup.cancel()
+        account_cleanup.cancel()
         with suppress(asyncio.CancelledError):
             await cleanup
+        with suppress(asyncio.CancelledError):
+            await account_cleanup
         nearby.registry.clear()
     try:
         tasks.put_nowait(None)
@@ -152,6 +157,8 @@ async def lifespan(app):
 
 app = FastAPI(title='굿모닝 · local studio', lifespan=lifespan)
 nearby.attach(app)
+accounts.register(app)
+account_policy.register(app)
 ALLOWED_ORIGINS = [origin.strip() for origin in os.getenv('GOODMORNING_FRONTEND_ORIGINS', 'https://niraaah.github.io').split(',') if origin.strip()]
 
 
@@ -168,8 +175,21 @@ async def same_origin(request: Request, call_next):
         if request.url.path.startswith(('/api/','/files/','/auth/')):
             return JSONResponse({'detail':'접속 링크로 먼저 로그인해 주세요.'},401)
         return RedirectResponse('/connect',status_code=303)
-    with owner_scope(request.state.owner):
-        response=await call_next(request)
+    async def dispatch():
+        # Recheck within the owner lock so a stale request cannot recreate data
+        # after withdrawal. Active background jobs prevent withdrawal separately.
+        if request.state.member:
+            request.state.owner,request.state.member=social_auth.identify(request,app.state.access_key,external_frontend)
+            if not request.state.member:return JSONResponse({'detail':'다시 로그인해 주세요.'},401)
+            member=request.state.member
+            if request.url.path.startswith(('/api/','/files/')) and (not member['profile_ready'] or member['terms_version']!=account_policy.VERSION or member['privacy_version']!=account_policy.VERSION):
+                return JSONResponse({'detail':'먼저 프로필 설정과 약관 확인을 마쳐 주세요.'},428)
+        with owner_scope(request.state.owner):
+            return await call_next(request)
+    if request.state.member:
+        async with accounts.owner_lock(request.state.owner):
+            response=await dispatch()
+    else:response=await dispatch()
     if request.url.path.startswith('/api/nearby/'):
         response.headers['Cache-Control']='no-store'
     response.headers['Referrer-Policy']='no-referrer'

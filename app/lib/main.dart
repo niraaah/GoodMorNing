@@ -12,6 +12,7 @@ import 'studio_dialog.dart';
 import 'asset_actions.dart';
 import 'goods_match_dialog.dart';
 import 'account_dialog.dart';
+import 'account_page.dart';
 import 'nearby.dart';
 import 'package:web/web.dart' as web;
 
@@ -19,10 +20,36 @@ const ink = Color(0xff294653),
     blue = Color(0xff659bb7),
     sky = Color(0xffeef7fc),
     line = Color(0xffd5e5ed);
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
   try {
-    Api.initialize();
-  } catch (_) {}
+    await Api.initialize();
+  } catch (_) {
+    runApp(
+      MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text(
+                    '브라우저 저장 정보를 정리하지 못했어요. 다른 굿모닝 탭을 모두 닫고 다시 시도해 주세요.',
+                  ),
+                  TextButton(
+                    onPressed: () => web.window.location.reload(),
+                    child: const Text('다시 시도'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    return;
+  }
   runApp(const GoodMorning());
 }
 
@@ -163,6 +190,17 @@ class _StudioState extends State<Studio> {
       return;
     }
     try {
+      var account = await Api.get('/auth/me');
+      if (account['kind'] == 'member' && account['profile_ready'] != true) {
+        if (!mounted) return;
+        await Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => const AccountPage(onboarding: true),
+          ),
+        );
+        account = await Api.get('/auth/me');
+      }
       final result = await Future.wait([
         Api.get('/api/assets'),
         Api.get('/api/diaries'),
@@ -574,10 +612,22 @@ class _StudioState extends State<Studio> {
     if (accountDialogOpen) return;
     accountDialogOpen = true;
     try {
-      await showStudioDialog<void>(
-        context: context,
-        builder: (_) => const AccountDialog(),
-      );
+      final account = await Api.get('/auth/me');
+      if (!mounted) return;
+      if (account['kind'] == 'member') {
+        await Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const AccountPage()),
+        );
+        await load();
+      } else {
+        await showStudioDialog<void>(
+          context: context,
+          builder: (_) => const AccountDialog(),
+        );
+      }
+    } catch (e) {
+      notify(e.toString().replaceFirst('Exception: ', ''));
     } finally {
       accountDialogOpen = false;
     }

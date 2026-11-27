@@ -14,3 +14,16 @@ CREATE TABLE IF NOT EXISTS oauth_attempts(
  created_at timestamptz NOT NULL DEFAULT now(), expires_at timestamptz NOT NULL,
  consumed_at timestamptz);
 CREATE INDEX IF NOT EXISTS oauth_attempts_client ON oauth_attempts(client_hash,created_at);
+
+ALTER TABLE account_profiles ADD COLUMN IF NOT EXISTS avatar bytea;
+ALTER TABLE account_profiles ADD COLUMN IF NOT EXISTS profile_ready boolean NOT NULL DEFAULT false;
+ALTER TABLE account_profiles ADD COLUMN IF NOT EXISTS terms_version text;
+ALTER TABLE account_profiles ADD COLUMN IF NOT EXISTS privacy_version text;
+ALTER TABLE account_profiles ADD COLUMN IF NOT EXISTS agreed_at timestamptz;
+ALTER TABLE account_profiles ADD COLUMN IF NOT EXISTS deleting boolean NOT NULL DEFAULT false;
+ALTER TABLE account_profiles ADD COLUMN IF NOT EXISTS deletion_requested_at timestamptz;
+ALTER TABLE oauth_attempts ADD COLUMN IF NOT EXISTS policy_version text;
+CREATE TABLE IF NOT EXISTS retired_guest_owners(
+ owner_hash text PRIMARY KEY, expires_at timestamptz NOT NULL);
+
+INSERT INTO schema_migrations VALUES('20261127_profiles_erasure_v1',now()) ON CONFLICT DO NOTHING;

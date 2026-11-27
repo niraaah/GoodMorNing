@@ -1,5 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 import 'api.dart';
+import 'account_page.dart';
 
 class AccountDialog extends StatefulWidget {
   const AccountDialog({super.key});
@@ -8,8 +9,12 @@ class AccountDialog extends StatefulWidget {
 }
 
 class _AccountDialogState extends State<AccountDialog> {
-  Map<String, dynamic>? account, providers;
-  bool busy = false, keepGuest = false;
+  Map<String, dynamic>? account, providers, legal;
+  bool busy = false,
+      keepGuest = false,
+      terms = false,
+      privacy = false,
+      age14 = false;
   String? error;
   @override
   void initState() {
@@ -23,11 +28,13 @@ class _AccountDialogState extends State<AccountDialog> {
       final values = await Future.wait([
         Api.get('/auth/me'),
         Api.get('/auth/providers'),
+        Api.get('/auth/legal'),
       ]);
       if (mounted)
         setState(() {
           account = Map<String, dynamic>.from(values[0]);
           providers = Map<String, dynamic>.from(values[1]);
+          legal = Map<String, dynamic>.from(values[2]);
         });
     } catch (_) {
       if (mounted) setState(() => error = '로그인 정보를 불러오지 못했어요. 서버 연결을 확인해 주세요.');
@@ -40,7 +47,14 @@ class _AccountDialogState extends State<AccountDialog> {
       error = null;
     });
     try {
-      await Api.socialLogin(provider, keepGuest);
+      await Api.socialLogin(
+        provider,
+        keepGuest,
+        legal!['version'],
+        terms,
+        privacy,
+        age14,
+      );
     } catch (e) {
       if (mounted)
         setState(() {
@@ -92,12 +106,67 @@ class _AccountDialogState extends State<AccountDialog> {
               ] else if (providers != null) ...[
                 const Text('구글 또는 카카오 계정으로 나의 에셋과 다이어리를 이어서 사용해 보세요.'),
                 const SizedBox(height: 16),
+                if (legal != null) ...[
+                  Wrap(
+                    children: [
+                      TextButton(
+                        onPressed: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) =>
+                                LegalPage(legal: legal!, privacy: false),
+                          ),
+                        ),
+                        child: const Text('이용약관'),
+                      ),
+                      TextButton(
+                        onPressed: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) =>
+                                LegalPage(legal: legal!, privacy: true),
+                          ),
+                        ),
+                        child: const Text('개인정보 처리방침'),
+                      ),
+                    ],
+                  ),
+                  const Text(
+                    '필수 항목: 소셜 서비스 식별번호, 닉네임, 로그인·동의 기록. 목적: 계정 확인·자료 보관·보안. 보유: 탈퇴까지(세부 삭제·백업 기간은 방침 참고). 동의를 거부할 수 있으나 회원 기능은 이용할 수 없어요. 사진은 선택 사항이에요.',
+                    style: TextStyle(fontSize: 12, height: 1.5),
+                  ),
+                  CheckboxListTile(
+                    value: terms,
+                    onChanged: busy
+                        ? null
+                        : (v) => setState(() => terms = v ?? false),
+                    title: const Text('[필수] 이용약관 동의'),
+                  ),
+                  CheckboxListTile(
+                    value: privacy,
+                    onChanged: busy
+                        ? null
+                        : (v) => setState(() => privacy = v ?? false),
+                    title: const Text('[필수] 개인정보 수집·이용 동의'),
+                  ),
+                  CheckboxListTile(
+                    value: age14,
+                    onChanged: busy
+                        ? null
+                        : (v) => setState(() => age14 = v ?? false),
+                    title: const Text('[필수] 만 14세 이상'),
+                  ),
+                ],
                 for (final provider in ['google', 'kakao'])
                   Padding(
                     padding: const EdgeInsets.only(bottom: 10),
                     child: OutlinedButton(
                       onPressed:
-                          !busy && providers![provider]?['enabled'] == true
+                          !busy &&
+                              terms &&
+                              privacy &&
+                              age14 &&
+                              providers![provider]?['enabled'] == true
                           ? () => login(provider)
                           : null,
                       style: OutlinedButton.styleFrom(
